@@ -1177,7 +1177,7 @@ function vSetup(){
   <h3 style="font-size:14px;margin:12px 0 2px">Встроенная модель</h3>
   <p class="s">Работает прямо на устройстве, текст никуда не передаётся. Один раз скачивается библиотека и модель (0,4–2 ГБ, лучше по Wi-Fi), дальше они хранятся в браузере. Нужен WebGPU: Chrome на Android 12+ или на компьютере. ${('gpu' in navigator)?'<b>На этом устройстве WebGPU доступен.</b>':'<b style="color:var(--red)">На этом устройстве WebGPU недоступен.</b>'} Маленькие модели хуже понимают сложные фразы и иногда ошибаются: всегда проверяйте предложенное.</p>
   <label class="f">Размер модели</label><select data-s="aiBModel">${BMODELS.map(m=>`<option value="${m[0]}" ${(s.aiBModel||BMODELS[1][0])===m[0]?'selected':''}>${m[1]}</option>`).join('')}</select>
-  <div class="bar"><button data-act="aiload">Скачать и проверить модель</button><button data-act="aidel">Удалить модель из памяти браузера</button></div><div class="s aistat"></div>
+  <div class="bar"><button data-act="aiload">Скачать и проверить модель</button><button data-act="aidiag">Диагностика</button><button data-act="aidel">Удалить модель из памяти браузера</button></div><div class="s aistat"></div>
   <details><summary>Дополнительно</summary><label class="f">Адрес библиотеки (менять не нужно)</label><input type="text" data-s="aiLib" value="${esc(s.aiLib||'')}" placeholder="https://esm.run/@mlc-ai/web-llm"></details>
   <h3 style="font-size:14px;margin:12px 0 2px">Сервер модели</h3>
   <p class="s">Локальная модель (например, Ollama: <code>http://localhost:11434/v1/chat/completions</code>) или любой совместимый сервис. Передача включена, только если вы разрешите её здесь. Перед отправкой на внешний адрес программа спрашивает подтверждение.</p>
@@ -1652,17 +1652,36 @@ const aiOn=()=>aiMode()!=='off';
 function aiStatus(t,pr){document.querySelectorAll('.aistat').forEach(e=>{e.textContent=t?(pr!=null?Math.round(pr*100)+'% · ':'')+t:'';});}
 const BMODELS=[['Qwen2.5-0.5B-Instruct-q4f16_1-MLC','0,5 млрд: быстрее, но слабее (около 0,4 ГБ)'],['Qwen2.5-1.5B-Instruct-q4f16_1-MLC','1,5 млрд: разумный выбор (около 1 ГБ)'],['Qwen2.5-3B-Instruct-q4f16_1-MLC','3 млрд: лучше, нужен мощный телефон или видеокарта (около 2 ГБ)']];
 let WL={eng:null,id:'',loading:null,lib:null};
+const LIBS=()=>[S.settings.aiLib,'https://esm.run/@mlc-ai/web-llm','https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm','https://esm.sh/@mlc-ai/web-llm'].filter(Boolean);
+async function loadLib(){
+  if(WL.lib)return WL.lib;const errs=[];
+  for(const u of LIBS()){let h=u;try{h=new URL(u).hostname;aiStatus('Загружаю библиотеку ('+h+')…');WL.lib=await import(u);WL.libUrl=u;return WL.lib;}catch(e){errs.push(h+': '+(e&&e.message||e));}}
+  throw new Error('Не удалось загрузить библиотеку модели. '+errs.join('; ')+'. Откройте «Диагностика» в настройках.');}
 async function builtinLoad(){
   if(!('gpu' in navigator))throw new Error('Этот браузер не поддерживает WebGPU, встроенная модель здесь не запустится. Нужен Chrome на Android 12+ или на компьютере. Либо подключите сервер модели');
-  const id=S.settings.aiBModel||BMODELS[1][0];
+  let ad=null;try{ad=await navigator.gpu.requestAdapter();}catch(e){}
+  if(!ad)throw new Error('WebGPU есть, но видеоадаптер не найден или отключён. Попробуйте другой браузер (Chrome) или обновите его');
+  const f16=!!(ad.features&&ad.features.has&&ad.features.has('shader-f16'));
+  let id=S.settings.aiBModel||BMODELS[1][0];if(!f16)id=id.replace('q4f16_1','q4f32_1');
   if(WL.eng&&WL.id===id)return WL.eng;
   if(WL.loading)return WL.loading;
   WL.loading=(async()=>{
-    aiStatus('Загружаю библиотеку…');
-    const lib=WL.lib||(WL.lib=await import(S.settings.aiLib||'https://esm.run/@mlc-ai/web-llm'));
-    const eng=await lib.CreateMLCEngine(id,{initProgressCallback:p=>aiStatus(p.text||'Загрузка модели…',p.progress)});
+    const lib=await loadLib();
+    aiStatus('Загружаю модель '+id+(f16?'':' (облегчённый режим без f16)')+'…');
+    let eng;try{eng=await lib.CreateMLCEngine(id,{initProgressCallback:p=>aiStatus(p.text||'Загрузка модели…',p.progress)});}
+    catch(e){const m=String(e&&e.message||e);throw new Error('Не удалось загрузить модель '+id+': '+m+(/fetch|network|load failed|Failed|CORS|Cache/i.test(m)?'. Проверьте интернет и доступ к huggingface.co (кнопка «Диагностика»)':''));}
     WL.eng=eng;WL.id=id;aiStatus('Модель готова.');return eng;})();
-  try{return await WL.loading;}catch(e){WL.lib=null;aiStatus('');throw new Error('Не удалось загрузить встроенную модель: '+(e.message||e)+'. Нужен интернет для первой загрузки (около 1 ГБ), лучше по Wi-Fi');}finally{WL.loading=null;}}
+  try{return await WL.loading;}catch(e){aiStatus(e.message);throw e;}finally{WL.loading=null;}}
+async function aiDiag(){
+  const L=[];L.push('Интернет по данным браузера: '+(navigator.onLine?'есть':'нет'));
+  L.push('WebGPU: '+('gpu' in navigator?'есть':'НЕТ'));
+  if('gpu' in navigator){try{const a=await navigator.gpu.requestAdapter();L.push('Видеоадаптер: '+(a?'найден; shader-f16: '+(a.features.has('shader-f16')?'да':'нет (будет выбрана облегчённая версия модели)'):'НЕ НАЙДЕН'));}catch(e){L.push('Видеоадаптер: ошибка '+e.message);}}
+  const chk=async(name,url,m)=>{try{const r=await fetch(url,{method:m||'GET',cache:'no-store'});L.push(name+': '+(r.ok?'доступен':'ответ '+r.status));}catch(e){L.push(name+': НЕДОСТУПЕН ('+(e.message||e)+')');}};
+  await chk('Библиотека esm.run','https://esm.run/@mlc-ai/web-llm','HEAD');
+  await chk('Библиотека cdn.jsdelivr.net','https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/package.json');
+  await chk('Библиотека esm.sh','https://esm.sh/@mlc-ai/web-llm','HEAD');
+  await chk('Хранилище моделей huggingface.co','https://huggingface.co/mlc-ai/Qwen2.5-0.5B-Instruct-q4f16_1-MLC/resolve/main/mlc-chat-config.json');
+  info('Диагностика встроенной модели','<div class="s" style="color:var(--tx)">'+L.map(esc).join('<br>')+'</div><div class="s" style="margin-top:8px">Если библиотека или huggingface.co недоступны, это блокировка сети или провайдера: попробуйте другую сеть (мобильный интернет вместо Wi-Fi или наоборот) или VPN. Пришлите мне этот список, если не получится.</div>');}
 function aiParse(cont){
   const m=String(cont).replace(/```json|```/g,'').match(/\{[\s\S]*\}/);if(!m)throw new Error('Модель не вернула ответ в нужном формате. Попробуйте переформулировать или выберите модель побольше');
   try{return JSON.parse(m[0]);}catch(e){throw new Error('Ответ модели не удалось разобрать');}}
@@ -1803,8 +1822,9 @@ document.addEventListener('click',e=>{
   else if(a==='tdefer'){if(task){deferTask(task);save();render();toast('Перенесено на '+fmt(task.hold)+': '+postponeText(task));
     if(STAGE>=2){dlg.onchange=null;dlg.onclose=null;dlg.innerHTML='<form method="dialog"><h3>Почему перенесли?</h3><div class="s">Ответ нужен, чтобы программа отличала нехватку данных от недооценки объёма. Можно пропустить.</div>'+['Ждал данные','Вытеснило срочное','Недооценил объём','Не хватило времени','Другое'].map(r=>'<button type="button" data-act="mvr" data-id="'+task.id+'" data-r="'+r+'">'+r+'</button>').join('')+'<div class="row"><button value="cancel">Пропустить</button></div></form>';dlg.showModal();}}}
   else if(a==='adddly')dlyForm();
-  else if(a==='aiload'){if(aiMode()!=='builtin'){toast('Сначала выберите «встроенная» в списке выше');return;}builtinLoad().then(()=>aiCall('Верни JSON {"ok":true}',[{role:'user',content:'проверка'}])).then(()=>toast('Встроенная модель работает')).catch(e=>toast(e.message));}
-  else if(a==='aidel'){(async()=>{try{const lib=WL.lib||await import(S.settings.aiLib||'https://esm.run/@mlc-ai/web-llm');await lib.deleteModelAllInfoInCache(S.settings.aiBModel||BMODELS[1][0]);WL.eng=null;WL.id='';toast('Модель удалена из памяти браузера');}catch(e){toast('Не удалось удалить: '+e.message);}})();}
+  else if(a==='aiload'){if(aiMode()!=='builtin'){toast('Сначала выберите «встроенная» в списке выше');return;}builtinLoad().then(()=>aiCall('Верни JSON {"ok":true}',[{role:'user',content:'проверка'}])).then(()=>{aiStatus('Встроенная модель работает.');toast('Встроенная модель работает');}).catch(e=>{aiStatus(e.message);toast('Ошибка: '+String(e.message).slice(0,160));});}
+  else if(a==='aidiag')aiDiag();
+  else if(a==='aidel'){(async()=>{try{const lib=await loadLib();await lib.deleteModelAllInfoInCache(S.settings.aiBModel||BMODELS[1][0]);WL.eng=null;WL.id='';toast('Модель удалена из памяти браузера');}catch(e){toast('Не удалось удалить: '+e.message);}})();}
   else if(a==='chat')chatOpen();
   else if(a==='chsend')chatSend();
   else if(a==='chnew'){CH={msgs:[],tasks:[],busy:false};chRender();}
