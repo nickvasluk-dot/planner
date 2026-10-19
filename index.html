@@ -639,23 +639,8 @@ function quickAdd(text,q){
 function afterAdd(t){if(t.urgent&&isWork(t)&&entOf(t)==='task'&&isOpen(t)&&!unavail(t))setTimeout(()=>replanProposal(t),60);}
 const aiLocal=h=>/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|.+\.local$)/.test(h);
 async function aiExtract(text,base){
-  const c=S.settings;if(c.aiAllow!=='да'||!c.aiUrl)throw new Error('Передача текста в ИИ-модель отключена в настройках');
-  let host='';try{host=new URL(c.aiUrl).hostname;}catch(e){throw new Error('Неверный адрес модели');}
-  if(!aiLocal(host)&&!confirm('Текст задачи будет отправлен на внешний сервер '+host+':\n\n«'+text.slice(0,200)+'»\n\nОтправить?'))throw new Error('Отправка отменена');
-  const body={model:c.aiModel||'llama3',temperature:0,messages:[{role:'system',content:'Ты помощник планировщика проектировщика. Из текста поручения извлеки поля и верни ТОЛЬКО JSON без пояснений: {"title":строка,"project":строка или null,"due":"YYYY-MM-DD" или null,"hours":число или null,"needs":"что нужно получить до начала" или null,"type":строка или null,"urgent":true/false,"section":строка или null}. Сегодня '+today()+'. Известные объекты: '+S.projects.map(p=>p.name).join('; ')+'. Известные типы: '+allTypes().join(', ')+'.'},{role:'user',content:text}]};
-  const r=await fetch(c.aiUrl,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},c.aiKey?{Authorization:'Bearer '+c.aiKey}:{}),body:JSON.stringify(body)});
-  if(!r.ok)throw new Error('Модель ответила ошибкой '+r.status);
-  const j=await r.json();let cont=(j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content)||j.response||'';
-  const m=String(cont).replace(/```json|```/g,'').match(/\{[\s\S]*\}/);if(!m)throw new Error('Модель не вернула JSON');
-  const a=JSON.parse(m[0]),q=Object.assign({},base);
-  if(a.title&&String(a.title).length>2)q.title=String(a.title).slice(0,160);
-  if(a.due&&/^\d{4}-\d{2}-\d{2}$/.test(a.due))q.due=a.due;
-  if(+a.hours>0&&+a.hours<=80)q.est=+a.hours;
-  if(a.needs)q.needsData=String(a.needs).slice(0,120);
-  if(a.type){const ty=allTypes().find(x=>x.toLowerCase()===String(a.type).toLowerCase());if(ty)q.type=ty;}
-  if(a.project){const k=String(a.project).toLowerCase(),p=S.projects.find(x=>x.name.toLowerCase().includes(k)||k.includes(x.name.toLowerCase()));if(p)q.project=p.id;}
-  if(a.urgent){q.urgent=1;q.imp=3;}if(a.section)q.section=String(a.section).slice(0,40);
-  q.ai=1;return q;}
+  const sys='Ты помощник планировщика проектировщика. Из текста поручения извлеки поля и верни ТОЛЬКО JSON без пояснений: {"title":строка,"project":строка или null,"due":"YYYY-MM-DD" или null,"hours":число или null,"needs":"что нужно получить до начала" или null,"type":строка или null,"urgent":true или false,"section":строка или null}. Не выдумывай: чего нет в тексте, ставь null. '+aiCtx();
+  return aiToQuick(await aiCall(sys,[{role:'user',content:text}]),base);}
 const VERBRX=/(подготов|направ|выда|провер|согласов|передат|разработ|запрос|отправ|сделат|внест|обновит|сформир|организ|уточнит|получит|подписат|выпустит|скорректир|устран|доработ)/i;
 function extractFromText(text){
   const out=[];String(text).split(/\n+/).forEach(line=>{let l=line.trim();if(l.length<12)return;
@@ -1119,11 +1104,11 @@ function vToday(){
   const week=open.filter(t=>!isHome(t)&&t.due&&diff(t.due,t0)>=0&&diff(t.due,t0)<=7).length;
   const stale=open.filter(t=>t.due&&diff(t.due,t0)<-30).length;
   let h=`<div class="sum"><div class="r"><b>${ow}</b>просрочено</div><div><b>${P.day.length}</b>на сегодня</div><div><b>${week}</b>сроков за 7 дн.</div></div>`;
-  if(!S.tasks.length)return h+`<div class="empty">Задач пока нет.<br>Импортируйте календарный план из Excel (вкладка «План»), добавьте рабочую задачу или бытовую ниже.<br><br><button data-act="demo">Загрузить демо-данные</button></div>`+homeSection();
+  if(!S.tasks.length)return h+`<div class="empty">Задач пока нет.<br>Импортируйте календарный план из Excel (вкладка «План»), добавьте рабочую задачу или бытовую ниже.<br><br><button data-act="demo">Загрузить демо-данные</button></div>`+(STAGE>=2?`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить ОВ по объекту А до среды, два часа»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form><div class="bar"><button data-act="chat">💬 Помощник</button></div>`:'')+homeSection();
   if(P.overH>P.cap)h+=`<div class="warn">Просрочено ${P.overN} задач (≈${P.overH} ч) — это около ${Math.ceil(P.overH/P.cap)} рабочих дней при ${P.cap} ч в день, если новых задач не появится. Часть стоит удалить, делегировать или согласовать перенос.</div>`;
   const tq=triageQueue(),cr=criticalList();
   h+=`<div class="bar"><button data-act="intr">☎ Прервали</button><button data-act="replan">⟳ Пересчитать план</button>${STAGE>=2?'<button data-act="chat">💬 Помощник</button>':''}</div>`;
-  if(STAGE>=2)h+=`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить замечания по разделу ОВ для объекта А до среды, примерно два часа, после получения обновлённой схемы»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${S.settings.aiAllow==='да'&&S.settings.aiUrl?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form>`;
+  if(STAGE>=2)h+=`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить замечания по разделу ОВ для объекта А до среды, примерно два часа, после получения обновлённой схемы»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form>`;
   h+=pendView();
   h+=overloadView();
   h+=otView();
@@ -1186,12 +1171,20 @@ function vSetup(){
   <p class="s">Программа спрашивает об этом на экране «Сегодня»; здесь можно править напрямую. Формат строки: <code>тип | вес 0–3 | число месяца | предупреждать за N дн. | зависит от типов (через ;) | последствие срыва</code>. Вес 3 — срыв недопустим. Число месяца (например, 30 для актов) становится расчётным сроком каждой задачи этого типа. «Зависит от» ставит раньше задачи нужных типов в том же объекте.</p>
   <div class="g2"><div><label class="f">Задержка после работы: максимум часов за вечер</label><input type="number" step="0.5" data-s="otMax" value="${esc(s.otMax!=null?s.otMax:2)}"></div><div><label class="f">Не чаще раз в неделю (0 — отключить)</label><input type="number" data-s="otWeek" value="${esc(s.otWeek!=null?s.otWeek:2)}"></div></div>
   <textarea data-act="kbtxt" rows="6" style="font:12.5px/1.4 monospace">${esc(kbText())}</textarea>
-  ${STAGE>=2?`<h2>Модель для разбора текста (необязательно)</h2>
-  <p class="s">Без модели всё работает по правилам. Можно подключить локальную модель (например, Ollama: <code>http://localhost:11434/v1/chat/completions</code>) или любой совместимый сервис. Передача включена только если вы разрешите её здесь. Перед отправкой на внешний адрес программа каждый раз спрашивает подтверждение. Модель только заполняет поля новой задачи, договорные сроки она не меняет.</p>
-  <div class="g2"><div><label class="f">Разрешить передачу текста в модель</label><select data-s="aiAllow"><option ${s.aiAllow==='да'?'':'selected'}>нет</option><option ${s.aiAllow==='да'?'selected':''}>да</option></select></div><div><label class="f">Название модели</label><input type="text" data-s="aiModel" value="${esc(s.aiModel||'')}"></div></div>
+  ${STAGE>=2?`<h2>Модель-помощник (необязательно)</h2>
+  <p class="s">Без модели всё работает по правилам. Модель нужна для свободного диалога и разбора сложных фраз. Она только предлагает поля новых задач, а сроки и план не меняет, и всё добавляется после вашего подтверждения.</p>
+  <label class="f">Какую модель использовать</label><select data-s="aiMode"><option value="off" ${aiMode()==='off'?'selected':''}>нет, только правила</option><option value="builtin" ${aiMode()==='builtin'?'selected':''}>встроенная (работает в браузере, в том числе на телефоне)</option><option value="server" ${aiMode()==='server'?'selected':''}>сервер на компьютере (Ollama и др.)</option></select>
+  <h3 style="font-size:14px;margin:12px 0 2px">Встроенная модель</h3>
+  <p class="s">Работает прямо на устройстве, текст никуда не передаётся. Один раз скачивается библиотека и модель (0,4–2 ГБ, лучше по Wi-Fi), дальше они хранятся в браузере. Нужен WebGPU: Chrome на Android 12+ или на компьютере. ${('gpu' in navigator)?'<b>На этом устройстве WebGPU доступен.</b>':'<b style="color:var(--red)">На этом устройстве WebGPU недоступен.</b>'} Маленькие модели хуже понимают сложные фразы и иногда ошибаются: всегда проверяйте предложенное.</p>
+  <label class="f">Размер модели</label><select data-s="aiBModel">${BMODELS.map(m=>`<option value="${m[0]}" ${(s.aiBModel||BMODELS[1][0])===m[0]?'selected':''}>${m[1]}</option>`).join('')}</select>
+  <div class="bar"><button data-act="aiload">Скачать и проверить модель</button><button data-act="aidel">Удалить модель из памяти браузера</button></div><div class="s aistat"></div>
+  <details><summary>Дополнительно</summary><label class="f">Адрес библиотеки (менять не нужно)</label><input type="text" data-s="aiLib" value="${esc(s.aiLib||'')}" placeholder="https://esm.run/@mlc-ai/web-llm"></details>
+  <h3 style="font-size:14px;margin:12px 0 2px">Сервер модели</h3>
+  <p class="s">Локальная модель (например, Ollama: <code>http://localhost:11434/v1/chat/completions</code>) или любой совместимый сервис. Передача включена, только если вы разрешите её здесь. Перед отправкой на внешний адрес программа спрашивает подтверждение.</p>
+  <div class="g2"><div><label class="f">Разрешить передачу текста на сервер</label><select data-s="aiAllow"><option ${s.aiAllow==='да'?'':'selected'}>нет</option><option ${s.aiAllow==='да'?'selected':''}>да</option></select></div><div><label class="f">Название модели</label><input type="text" data-s="aiModel" value="${esc(s.aiModel||'')}"></div></div>
   <label class="f">Адрес (chat/completions)</label><input type="text" data-s="aiUrl" value="${esc(s.aiUrl||'')}" placeholder="http://localhost:11434/v1/chat/completions">
   <label class="f">Ключ доступа (если нужен; хранится только на этом устройстве)</label><input type="text" data-s="aiKey" value="${esc(s.aiKey||'')}">
-  <div class="bar"><button data-act="aitest">Проверить подключение</button></div><p class="s">Если приложение открыто по https://, браузер не разрешает обращаться к модели по http:// в локальной сети. Работает адрес на этом же компьютере (localhost), а для телефона — Android-версия или VPN с https.</p>
+  <div class="bar"><button data-act="aitest">Проверить подключение</button></div><p class="s">Если приложение открыто по https://, браузер не разрешает обращаться к серверу по http:// в локальной сети. Работает адрес на этом же компьютере (localhost).</p>
   <h2>Что усвоила система</h2>${STAGE<3?learnedView():'<div class="s">Подробно — на вкладке «Статистика и обучение».</div>'}`:''}
   <h2>Обучение по факту</h2>
   <div class="g2"><div><label class="f">Поправлять оценки по опыту</label><select data-s="learn"><option ${s.learn!=='нет'?'selected':''}>да</option><option ${s.learn==='нет'?'selected':''}>нет</option></select></div><div><button class="dng" data-act="lreset">Сбросить обучение</button></div></div>
@@ -1654,8 +1647,33 @@ function dlyForm(t,draft){
   },isNew?'':`<button type="button" class="dng" data-act="deltask" data-id="${t.id}">Удалить</button>`);}
 /* ---------- помощник: диалог с созданием задач и докладная записка из письма (через подключаемую модель) ---------- */
 const AIS={ok:{}};let CH={msgs:[],tasks:[],busy:false};
+const aiMode=()=>{const c=S.settings;return c.aiMode||((c.aiAllow==='да'&&c.aiUrl)?'server':'off');};
+const aiOn=()=>aiMode()!=='off';
+function aiStatus(t,pr){document.querySelectorAll('.aistat').forEach(e=>{e.textContent=t?(pr!=null?Math.round(pr*100)+'% · ':'')+t:'';});}
+const BMODELS=[['Qwen2.5-0.5B-Instruct-q4f16_1-MLC','0,5 млрд: быстрее, но слабее (около 0,4 ГБ)'],['Qwen2.5-1.5B-Instruct-q4f16_1-MLC','1,5 млрд: разумный выбор (около 1 ГБ)'],['Qwen2.5-3B-Instruct-q4f16_1-MLC','3 млрд: лучше, нужен мощный телефон или видеокарта (около 2 ГБ)']];
+let WL={eng:null,id:'',loading:null,lib:null};
+async function builtinLoad(){
+  if(!('gpu' in navigator))throw new Error('Этот браузер не поддерживает WebGPU, встроенная модель здесь не запустится. Нужен Chrome на Android 12+ или на компьютере. Либо подключите сервер модели');
+  const id=S.settings.aiBModel||BMODELS[1][0];
+  if(WL.eng&&WL.id===id)return WL.eng;
+  if(WL.loading)return WL.loading;
+  WL.loading=(async()=>{
+    aiStatus('Загружаю библиотеку…');
+    const lib=WL.lib||(WL.lib=await import(S.settings.aiLib||'https://esm.run/@mlc-ai/web-llm'));
+    const eng=await lib.CreateMLCEngine(id,{initProgressCallback:p=>aiStatus(p.text||'Загрузка модели…',p.progress)});
+    WL.eng=eng;WL.id=id;aiStatus('Модель готова.');return eng;})();
+  try{return await WL.loading;}catch(e){WL.lib=null;aiStatus('');throw new Error('Не удалось загрузить встроенную модель: '+(e.message||e)+'. Нужен интернет для первой загрузки (около 1 ГБ), лучше по Wi-Fi');}finally{WL.loading=null;}}
+function aiParse(cont){
+  const m=String(cont).replace(/```json|```/g,'').match(/\{[\s\S]*\}/);if(!m)throw new Error('Модель не вернула ответ в нужном формате. Попробуйте переформулировать или выберите модель побольше');
+  try{return JSON.parse(m[0]);}catch(e){throw new Error('Ответ модели не удалось разобрать');}}
 async function aiCall(sys,msgs){
-  const c=S.settings;if(c.aiAllow!=='да'||!c.aiUrl)throw new Error('Модель не подключена: включите передачу текста и укажите адрес в настройках');
+  const mode=aiMode();
+  if(mode==='off')throw new Error('Модель не подключена: выберите «встроенная» или «сервер» в настройках');
+  if(mode==='builtin'){
+    const eng=await builtinLoad(),req=Object.assign({messages:[{role:'system',content:sys}].concat(msgs.map(m=>({role:m.role,content:String(m.content).slice(0,6000)}))),temperature:0.2,max_tokens:700});
+    let r;try{r=await eng.chat.completions.create(Object.assign({response_format:{type:'json_object'}},req));}catch(e){r=await eng.chat.completions.create(req);}
+    return aiParse((r.choices&&r.choices[0]&&r.choices[0].message&&r.choices[0].message.content)||'');}
+  const c=S.settings;if(c.aiAllow!=='да'||!c.aiUrl)throw new Error('Передача текста на сервер модели отключена в настройках');
   let host='';try{host=new URL(c.aiUrl).hostname;}catch(e){throw new Error('Неверный адрес модели');}
   if(!aiLocal(host)&&!AIS.ok[host]){if(!confirm('Текст будет отправлен на внешний сервер '+host+'. Продолжить? (подтверждение действует до закрытия приложения)'))throw new Error('Отправка отменена');AIS.ok[host]=1;}
   const go=async rf=>{const ac=new AbortController(),tm=setTimeout(()=>ac.abort(),180000);
@@ -1663,9 +1681,7 @@ async function aiCall(sys,msgs){
     finally{clearTimeout(tm);}};
   let r;try{r=await go(true);if(!r.ok)r=await go(false);}catch(e){throw new Error(e.name==='AbortError'?'Модель не ответила за 3 минуты':'Нет связи с моделью: '+e.message);}
   if(!r.ok)throw new Error('Модель ответила ошибкой '+r.status);
-  const j=await r.json();const cont=(j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content)||j.response||'';
-  const m=String(cont).replace(/```json|```/g,'').match(/\{[\s\S]*\}/);if(!m)throw new Error('Модель не вернула ответ в нужном формате. Попробуйте переформулировать или выберите модель побольше');
-  try{return JSON.parse(m[0]);}catch(e){throw new Error('Ответ модели не удалось разобрать');}}
+  const j=await r.json();return aiParse((j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content)||j.response||'');}
 function aiToQuick(a,base){
   const q=Object.assign({imp:2,ent:'task'},base||{});
   if(a.title&&String(a.title).length>2)q.title=String(a.title).slice(0,160);q.orig=q.orig||q.title;
@@ -1674,7 +1690,7 @@ function aiToQuick(a,base){
   if(a.needs)q.needsData=String(a.needs).slice(0,120);
   if(a.type){const ty=allTypes().find(x=>x.toLowerCase()===String(a.type).toLowerCase());if(ty)q.type=ty;}
   if(a.project){const k=String(a.project).toLowerCase(),p=S.projects.find(x=>x.name.toLowerCase().includes(k)||k.includes(x.name.toLowerCase()));if(p)q.project=p.id;}
-  if(a.urgent){q.urgent=1;q.imp=3;}q.ai=1;return q;}
+  if(a.urgent){q.urgent=1;q.imp=3;}if(a.section)q.section=String(a.section).slice(0,40);q.ai=1;return q;}
 function aiCtx(){return 'Сегодня '+today()+' ('+DN[dt(today()).getDay()]+'). Известные объекты: '+(S.projects.map(p=>p.name).join('; ')||'нет')+'. Известные типы задач: '+allTypes().join(', ')+'.';}
 function aiDigest(){
   try{const t0=today(),od=S.tasks.filter(t=>isOpen(t)&&isWork(t)&&!isHome(t)&&entOf(t)==='task'&&t.due&&diff(t.due,t0)<0).length;
@@ -1688,9 +1704,9 @@ function aiAddTasks(list,cls){
   if(n){save();render();toast('Добавлено задач: '+n);}return n;}
 function chatOpen(){
   dlg.onchange=null;dlg.onclose=null;
-  const on=S.settings.aiAllow==='да'&&S.settings.aiUrl;
-  dlg.innerHTML=`<form method="dialog"><h3>Помощник</h3><div class="s">${on?'Диалог с моделью ('+esc(S.settings.aiModel||'модель')+'). Опишите, что нужно сделать, или спросите о плане: предложенные задачи появятся ниже, добавляются только после вашего подтверждения.':'Модель не подключена. Помощник разбирает текст правилами (срок, часы, объект, условия начала). Подключить модель можно в «Настройки».'}</div>
-  <div id="chlog" style="max-height:34vh;overflow:auto;margin:8px 0"></div><div id="chtasks"></div>
+  const on=aiOn();
+  dlg.innerHTML=`<form method="dialog"><h3>Помощник</h3><div class="s">${on?'Диалог с моделью ('+esc(aiMode()==='builtin'?'встроенная':(S.settings.aiModel||'сервер'))+'). Опишите, что нужно сделать, или спросите о плане: предложенные задачи появятся ниже, добавляются только после вашего подтверждения.':'Модель не подключена. Помощник разбирает текст правилами (срок, часы, объект, условия начала). Подключить модель можно в «Настройки».'}</div>
+  <div class="s aistat"></div><div id="chlog" style="max-height:34vh;overflow:auto;margin:8px 0"></div><div id="chtasks"></div>
   <textarea id="chin" rows="3" placeholder="Например: завтра проверить ОВ по объекту А, ждём схему, и позвонить заказчику до пятницы"></textarea>
   <div class="row"><button value="cancel">Закрыть</button><button type="button" data-act="chnew">Новый диалог</button><button type="button" class="pri" data-act="chsend">Отправить</button></div></form>`;
   dlg.showModal();chRender();}
@@ -1702,7 +1718,7 @@ async function chatSend(){
   const inp=$('#chin');const text=(inp.value||'').trim();if(!text||CH.busy)return;
   CH.msgs.push({role:'user',content:text});inp.value='';CH.busy=true;chRender();
   try{
-    if(S.settings.aiAllow==='да'&&S.settings.aiUrl){
+    if(aiOn()){
       const sys='Ты помощник планировщика главного инженера проекта (проектирование). Отвечай по-русски, кратко. Верни ТОЛЬКО JSON: {"reply":"ответ пользователю","tasks":[{"title":строка,"project":строка или null,"due":"YYYY-MM-DD" или null,"hours":число или null,"needs":"что нужно получить до начала" или null,"type":строка или null,"urgent":true или false}]}. Добавляй задачи только если пользователь явно говорит, что нужно что-то сделать. Не выдумывай сроки, часы и объекты: если не сказано, ставь null. '+aiCtx()+' Ситуация, посчитанная планировщиком (опирайся на неё в вопросах о плане): '+aiDigest();
       const a=await aiCall(sys,CH.msgs.slice(-8).map(m=>({role:m.role,content:m.content})));
       CH.msgs.push({role:'assistant',content:String(a.reply||'Готово.').slice(0,1500)});
@@ -1787,6 +1803,8 @@ document.addEventListener('click',e=>{
   else if(a==='tdefer'){if(task){deferTask(task);save();render();toast('Перенесено на '+fmt(task.hold)+': '+postponeText(task));
     if(STAGE>=2){dlg.onchange=null;dlg.onclose=null;dlg.innerHTML='<form method="dialog"><h3>Почему перенесли?</h3><div class="s">Ответ нужен, чтобы программа отличала нехватку данных от недооценки объёма. Можно пропустить.</div>'+['Ждал данные','Вытеснило срочное','Недооценил объём','Не хватило времени','Другое'].map(r=>'<button type="button" data-act="mvr" data-id="'+task.id+'" data-r="'+r+'">'+r+'</button>').join('')+'<div class="row"><button value="cancel">Пропустить</button></div></form>';dlg.showModal();}}}
   else if(a==='adddly')dlyForm();
+  else if(a==='aiload'){if(aiMode()!=='builtin'){toast('Сначала выберите «встроенная» в списке выше');return;}builtinLoad().then(()=>aiCall('Верни JSON {"ok":true}',[{role:'user',content:'проверка'}])).then(()=>toast('Встроенная модель работает')).catch(e=>toast(e.message));}
+  else if(a==='aidel'){(async()=>{try{const lib=WL.lib||await import(S.settings.aiLib||'https://esm.run/@mlc-ai/web-llm');await lib.deleteModelAllInfoInCache(S.settings.aiBModel||BMODELS[1][0]);WL.eng=null;WL.id='';toast('Модель удалена из памяти браузера');}catch(e){toast('Не удалось удалить: '+e.message);}})();}
   else if(a==='chat')chatOpen();
   else if(a==='chsend')chatSend();
   else if(a==='chnew'){CH={msgs:[],tasks:[],busy:false};chRender();}
