@@ -1689,8 +1689,15 @@ async function aiCall(sys,msgs){
   const mode=aiMode();
   if(mode==='off')throw new Error('Модель не подключена: выберите «встроенная» или «сервер» в настройках');
   if(mode==='builtin'){
-    const eng=await builtinLoad(),req=Object.assign({messages:[{role:'system',content:sys}].concat(msgs.map(m=>({role:m.role,content:String(m.content).slice(0,6000)}))),temperature:0.2,max_tokens:700});
-    let r;try{r=await eng.chat.completions.create(Object.assign({response_format:{type:'json_object'}},req));}catch(e){r=await eng.chat.completions.create(req);}
+    const req={messages:[{role:'system',content:sys+' Отвечай одним JSON-объектом, без пояснений до и после него.'}].concat(msgs.map(m=>({role:m.role,content:String(m.content).slice(0,6000)}))),temperature:0.2,max_tokens:700};
+    let r=null,last=null;
+    for(let attempt=0;attempt<2&&!r;attempt++){
+      const eng=await builtinLoad();
+      try{try{await eng.resetChat();}catch(e){}r=await eng.chat.completions.create(req);}
+      catch(e){last=e;const m=String(e&&e.message||e);
+        if(attempt===0&&/dispos|device|lost|GPU|abort/i.test(m)){try{await eng.unload();}catch(x){}WL.eng=null;WL.id='';aiStatus('Перезапускаю модель…');continue;}
+        throw new Error('Модель загружена, но сбой при ответе: '+m+(/dispos|device|lost|GPU|memory|Out of/i.test(m)?'. Закройте другие вкладки и приложения (не хватает памяти видеокарты) или выберите размер 0,5 млрд':''));}}
+    if(!r)throw new Error('Модель не ответила: '+(last&&last.message||'сбой'));
     return aiParse((r.choices&&r.choices[0]&&r.choices[0].message&&r.choices[0].message.content)||'');}
   const c=S.settings;if(c.aiAllow!=='да'||!c.aiUrl)throw new Error('Передача текста на сервер модели отключена в настройках');
   let host='';try{host=new URL(c.aiUrl).hostname;}catch(e){throw new Error('Неверный адрес модели');}
