@@ -640,8 +640,9 @@ function afterAdd(t){if(t.urgent&&isWork(t)&&entOf(t)==='task'&&isOpen(t)&&!unav
 const aiLocal=h=>/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|.+\.local$)/.test(h);
 async function aiExtract(text,base){
   const sys='Ты помощник планировщика проектировщика. Из текста поручения извлеки поля и верни ТОЛЬКО JSON без пояснений: {"title":строка,"project":строка или null,"due":"YYYY-MM-DD" или null,"hours":число или null,"needs":"что нужно получить до начала" или null,"type":строка или null,"urgent":true или false,"section":строка или null}. Не выдумывай: чего нет в тексте, ставь null. '+aiCtx();
-  return aiToQuick(await aiCall(sys,[{role:'user',content:text}]),base);}
-const VERBRX=/(подготов|направ|выда|провер|согласов|передат|разработ|запрос|отправ|сделат|внест|обновит|сформир|организ|уточнит|получит|подписат|выпустит|скорректир|устран|доработ)/i;
+  try{return aiToQuick(await aiCall(sys,[{role:'user',content:text}]),base);}
+  catch(e){if(/разобрать|формат/.test(e.message))return Object.assign({},base,{aiFail:1});throw e;}}
+const VERBRX=/(подготов|направ|выда|провер|согласов|передат|разработ|запрос|отправ|сделат|внест|обновит|сформир|организ|уточнит|получит|подписат|выпустит|скорректир|устран|доработ|позвон|напис|связат|напомн|заказат|оплатит|принест|созвон|обсудит|перенест|собрат|заполн|рассчит|посчит)/i;
 function extractFromText(text){
   const out=[];String(text).split(/\n+/).forEach(line=>{let l=line.trim();if(l.length<12)return;
     const bullet=/^(\d+(?:\.\d+)*[.)]|[-–•*])\s+/.test(l);l=l.replace(/^(\d+(?:\.\d+)*[.)]?|[-–•*])\s+/,'');
@@ -1682,23 +1683,35 @@ async function aiDiag(){
   await chk('Библиотека esm.sh','https://esm.sh/@mlc-ai/web-llm','HEAD');
   await chk('Хранилище моделей huggingface.co','https://huggingface.co/mlc-ai/Qwen2.5-0.5B-Instruct-q4f16_1-MLC/resolve/main/mlc-chat-config.json');
   info('Диагностика встроенной модели','<div class="s" style="color:var(--tx)">'+L.map(esc).join('<br>')+'</div><div class="s" style="margin-top:8px">Если библиотека или huggingface.co недоступны, это блокировка сети или провайдера: попробуйте другую сеть (мобильный интернет вместо Wi-Fi или наоборот) или VPN. Пришлите мне этот список, если не получится.</div>');}
+function aiBalance(x){
+  let st=[],inS=false,esc=false;
+  for(const ch of x){if(inS){if(esc)esc=false;else if(ch==='\\')esc=true;else if(ch==='"')inS=false;}else if(ch==='"')inS=true;else if(ch==='{'||ch==='[')st.push(ch==='{'?'}':']');else if(ch==='}'||ch===']')st.pop();}
+  let o=x;if(inS)o+='"';o=o.replace(/[,:\s]+$/,'');if(/"\s*$/.test(o)&&st[st.length-1]==='}'&&/[{,]\s*"[^"]*"$/.test(o))o+=':null';
+  return o+st.reverse().join('');}
 function aiParse(cont){
-  const m=String(cont).replace(/```json|```/g,'').match(/\{[\s\S]*\}/);if(!m)throw new Error('Модель не вернула ответ в нужном формате. Попробуйте переформулировать или выберите модель побольше');
-  try{return JSON.parse(m[0]);}catch(e){throw new Error('Ответ модели не удалось разобрать');}}
+  const t0=String(cont).replace(/```json|```/g,''),i=t0.indexOf('{');
+  if(i<0)throw new Error('Модель не вернула ответ в нужном формате');
+  const t=t0.slice(i),cut=t.slice(0,t.lastIndexOf('}')+1)||t;
+  const fix=x=>x.replace(/,\s*([}\]])/g,'$1').replace(/([{,]\s*)([A-Za-z_]\w*)\s*:/g,'$1"$2":').replace(/'([^'\n]*)'\s*:/g,'"$1":').replace(/:\s*'([^'\n]*)'/g,':"$1"').replace(/\bNone\b/g,'null').replace(/\bTrue\b/g,'true').replace(/\bFalse\b/g,'false');
+  const tries=[cut,fix(cut),aiBalance(fix(t)),fix(cut).replace(/[“”]/g,'"'),aiBalance(fix(t).replace(/[“”]/g,'"'))];
+  for(const x of tries){try{const o=JSON.parse(x);if(o&&typeof o==='object'&&!Array.isArray(o))return o;}catch(e){}}
+  throw new Error('Ответ модели не удалось разобрать');}
+const aiSmall=()=>/0\.5B|1\.5B|[^.\d]1B/i.test(S.settings.aiBModel||BMODELS[1][0]);
+async function builtinGen(sys,msgs,json,maxTok){
+  const req={messages:[{role:'system',content:sys+(json?' Отвечай одним JSON-объектом, без пояснений до и после него.':'')}].concat(msgs.map(m=>({role:m.role,content:String(m.content).slice(0,6000)}))),temperature:0.2,max_tokens:maxTok||700};
+  let r=null,last=null;
+  for(let attempt=0;attempt<2&&!r;attempt++){
+    const eng=await builtinLoad();
+    try{try{await eng.resetChat();}catch(e){}r=await eng.chat.completions.create(req);}
+    catch(e){last=e;const m=String(e&&e.message||e);
+      if(attempt===0&&/dispos|device|lost|GPU|abort/i.test(m)){try{await eng.unload();}catch(x){}WL.eng=null;WL.id='';aiStatus('Перезапускаю модель…');continue;}
+      throw new Error('Модель загружена, но сбой при ответе: '+m+(/dispos|device|lost|GPU|memory|Out of/i.test(m)?'. Закройте другие вкладки и приложения (не хватает памяти видеокарты) или выберите размер 0,5 млрд':''));}}
+  if(!r)throw new Error('Модель не ответила: '+(last&&last.message||'сбой'));
+  return (r.choices&&r.choices[0]&&r.choices[0].message&&r.choices[0].message.content)||'';}
 async function aiCall(sys,msgs){
   const mode=aiMode();
   if(mode==='off')throw new Error('Модель не подключена: выберите «встроенная» или «сервер» в настройках');
-  if(mode==='builtin'){
-    const req={messages:[{role:'system',content:sys+' Отвечай одним JSON-объектом, без пояснений до и после него.'}].concat(msgs.map(m=>({role:m.role,content:String(m.content).slice(0,6000)}))),temperature:0.2,max_tokens:700};
-    let r=null,last=null;
-    for(let attempt=0;attempt<2&&!r;attempt++){
-      const eng=await builtinLoad();
-      try{try{await eng.resetChat();}catch(e){}r=await eng.chat.completions.create(req);}
-      catch(e){last=e;const m=String(e&&e.message||e);
-        if(attempt===0&&/dispos|device|lost|GPU|abort/i.test(m)){try{await eng.unload();}catch(x){}WL.eng=null;WL.id='';aiStatus('Перезапускаю модель…');continue;}
-        throw new Error('Модель загружена, но сбой при ответе: '+m+(/dispos|device|lost|GPU|memory|Out of/i.test(m)?'. Закройте другие вкладки и приложения (не хватает памяти видеокарты) или выберите размер 0,5 млрд':''));}}
-    if(!r)throw new Error('Модель не ответила: '+(last&&last.message||'сбой'));
-    return aiParse((r.choices&&r.choices[0]&&r.choices[0].message&&r.choices[0].message.content)||'');}
+  if(mode==='builtin')return aiParse(await builtinGen(sys,msgs,true));
   const c=S.settings;if(c.aiAllow!=='да'||!c.aiUrl)throw new Error('Передача текста на сервер модели отключена в настройках');
   let host='';try{host=new URL(c.aiUrl).hostname;}catch(e){throw new Error('Неверный адрес модели');}
   if(!aiLocal(host)&&!AIS.ok[host]){if(!confirm('Текст будет отправлен на внешний сервер '+host+'. Продолжить? (подтверждение действует до закрытия приложения)'))throw new Error('Отправка отменена');AIS.ok[host]=1;}
@@ -1740,15 +1753,27 @@ function chRender(){
   const L=$('#chlog');if(!L)return;
   L.innerHTML=CH.msgs.map(m=>`<div class="s" style="margin:5px 0;color:var(--tx)"><b>${m.role==='user'?'Вы':'Помощник'}:</b> ${esc(m.content)}</div>`).join('')+(CH.busy?'<div class="s">Думаю…</div>':'');L.scrollTop=L.scrollHeight;
   $('#chtasks').innerHTML=CH.tasks.length?`<div class="s" style="margin-top:6px"><b>Предлагаемые задачи:</b></div>${aiRows(CH.tasks,'chc')}<div class="row"><button type="button" class="pri" data-act="chadd">Добавить выбранные</button></div>`:'';}
+function ruleTasks(text){const ex=extractFromText(text);const r=ex.length?ex:((VERBRX.test(text)||/нужно|надо|необходимо/i.test(text))?[parseQuick(text)]:[]);return r.filter(x=>x&&x.title&&x.title.length>2);}
 async function chatSend(){
   const inp=$('#chin');const text=(inp.value||'').trim();if(!text||CH.busy)return;
   CH.msgs.push({role:'user',content:text});inp.value='';CH.busy=true;chRender();
   try{
     if(aiOn()){
       const sys='Ты помощник планировщика главного инженера проекта (проектирование). Отвечай по-русски, кратко. Верни ТОЛЬКО JSON: {"reply":"ответ пользователю","tasks":[{"title":строка,"project":строка или null,"due":"YYYY-MM-DD" или null,"hours":число или null,"needs":"что нужно получить до начала" или null,"type":строка или null,"urgent":true или false}]}. Добавляй задачи только если пользователь явно говорит, что нужно что-то сделать. Не выдумывай сроки, часы и объекты: если не сказано, ставь null. '+aiCtx()+' Ситуация, посчитанная планировщиком (опирайся на неё в вопросах о плане): '+aiDigest();
-      const a=await aiCall(sys,CH.msgs.slice(-8).map(m=>({role:m.role,content:m.content})));
-      CH.msgs.push({role:'assistant',content:String(a.reply||'Готово.').slice(0,1500)});
-      (Array.isArray(a.tasks)?a.tasks:[]).slice(0,10).forEach(x=>{if(x&&x.title)CH.tasks.push(aiToQuick(x,{}));});
+      const hist=CH.msgs.slice(-8).map(m=>({role:m.role,content:m.content}));
+      if(aiMode()==='builtin'&&aiSmall()){
+        const sysP='Ты помощник планировщика главного инженера проекта (проектирование). Отвечай по-русски, кратко: 1-3 предложения, без списков и без JSON. Не выдумывай факты о задачах и сроках пользователя. '+aiCtx()+' Ситуация, посчитанная планировщиком: '+aiDigest();
+        let txt=await builtinGen(sysP,hist,false,260);txt=String(txt).replace(/```[a-z]*|```/g,'').trim();
+        if(/^\s*\{/.test(txt)){try{txt=String(aiParse(txt).reply||'');}catch(e){txt='';}}
+        CH.msgs.push({role:'assistant',content:(txt||'Приняла.').slice(0,1200)});
+        ruleTasks(text).forEach(q=>CH.tasks.push(q));
+      }else{
+        try{
+          const a=await aiCall(sys,hist);
+          CH.msgs.push({role:'assistant',content:String(a.reply||'Готово.').slice(0,1500)});
+          (Array.isArray(a.tasks)?a.tasks:[]).slice(0,10).forEach(x=>{if(x&&x.title)CH.tasks.push(aiToQuick(x,{}));});
+        }catch(e){if(!/разобрать|формат/.test(e.message))throw e;CH.msgs.push({role:'assistant',content:'Модель ответила в неверном формате, задачи разобрал правилами. Проверьте ниже.'});ruleTasks(text).forEach(q=>CH.tasks.push(q));}
+      }
     }else{
       const ex=extractFromText(text),q=ex.length?ex:[parseQuick(text)];
       CH.tasks=CH.tasks.concat(q.filter(x=>x.title&&x.title.length>2));
@@ -1866,7 +1891,7 @@ document.addEventListener('click',e=>{
   else if(a==='xtext')extractDialog();
   else if(a==='xtgo'){xt.c=extractFromText($('#xttext').value);xtRender();}
   else if(a==='xtadd'){const sel=[...dlg.querySelectorAll('input[data-xi]:checked')].map(x=>+x.dataset.xi);let n=0;sel.forEach(i=>{const t=taskFromQuick(xt.c[i],'текст / протокол');S.tasks.push(t);n++;});dlg.close();save();render();toast('Добавлено поручений: '+n);}
-  else if(a==='qai'){const text=($('#qqtext')||{}).value||'';if(!text.trim())return;toast('Разбираю текст моделью…');aiExtract(text,parseQuick(text)).then(q=>quickAdd(text,q)).catch(e=>{toast(e.message);});}
+  else if(a==='qai'){const text=($('#qqtext')||{}).value||'';if(!text.trim())return;toast('Разбираю текст моделью…');aiExtract(text,parseQuick(text)).then(q=>{if(q.aiFail)toast('Модель не справилась, разобрал правилами. Проверьте поля.');quickAdd(text,q);}).catch(e=>{toast(e.message);});}
   else if(a==='loff'){S.learn.off=S.learn.off||{};const k=b.dataset.k;if(S.learn.off[k])delete S.learn.off[k];else S.learn.off[k]=1;Object.keys(LC).forEach(x=>delete LC[x]);Object.keys(PC).forEach(x=>delete PC[x]);RM=null;save();render();}
   else if(a==='ldel'){delete S.settings.lead[b.dataset.k];save();render();}
   else if(a==='aitest'){aiExtract('Проверка связи: подготовить письмо до пятницы, два часа',parseQuick('Проверка связи: подготовить письмо до пятницы, два часа')).then(q=>toast('Модель отвечает: «'+q.title.slice(0,40)+'»'+(q.due?', срок '+fmt(q.due):''))).catch(e=>toast(e.message));}
