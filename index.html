@@ -901,7 +901,7 @@ function stamp(){ // отметка времени изменения, «над�
   DC={};DR=null;RM=null;
   const lim=now-90*864e5;Object.keys(S.del).forEach(id=>{if(S.del[id]<lim)delete S.del[id];});
 }
-function save(){applyKB();stamp();try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('Не удалось сохранить данные');}}
+function save(){applyKB();stamp();try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('Не удалось сохранить данные');}try{sySoon();}catch(e){}}
 const tkey=t=>[t.title,t.project,t.kind].map(x=>String(x||'').trim().toLowerCase()).join('|');
 function mergeData(d){
   const r={add:0,upd:0,del:0},D=d.del||{};
@@ -924,6 +924,93 @@ function mergeData(d){
   S.settings.nextNo=Math.max(+S.settings.nextNo||1,+(d.settings&&d.settings.nextNo)||1);
   stamp();save();return r;
 }
+
+/* ---------- СИНХРОНИЗАЦИЯ: личный приватный репозиторий GitHub, данные шифруются на устройстве (AES-GCM, ключ из парольной фразы) ---------- */
+const SYK='gip_sync_v1',SYF='planner-data.enc.json';
+let SY=(()=>{try{return JSON.parse(localStorage.getItem(SYK))||{};}catch(e){return {};}})();
+let SYB=false,SYT=null,SYKC={};
+const syCfg=()=>!!(SY.repo&&SY.token&&SY.pass);
+function sySave(){try{localStorage.setItem(SYK,JSON.stringify(SY));}catch(e){}}
+const syB64=u=>{let t='';for(let i=0;i<u.length;i+=0x8000)t+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(t);};
+const syUn=b=>Uint8Array.from(atob(b),c=>c.charCodeAt(0));
+async function syKey(pass,salt,it){const k=pass+'|'+syB64(salt)+'|'+it;if(SYKC[k])return SYKC[k];
+  const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return SYKC[k]=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:it,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);}
+async function syEnc(text,pass){const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12)),it=250000,key=await syKey(pass,salt,it);
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(text)));
+  return JSON.stringify({app:'gip-planner',v:1,kdf:'PBKDF2-SHA256',it,salt:syB64(salt),iv:syB64(iv),ct:syB64(ct)});}
+async function syDec(file,pass){let f;try{f=JSON.parse(file);}catch(e){throw new Error('Файл в репозитории повреждён');}
+  if(!f||f.app!=='gip-planner'||!f.ct)throw new Error('В репозитории лежит чужой файл '+SYF);
+  try{const key=await syKey(pass,syUn(f.salt),f.it||250000);
+    return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:syUn(f.iv)},key,syUn(f.ct)));}
+  catch(e){throw new Error('Неверная парольная фраза (или файл повреждён)');}}
+async function syHash(t){const h=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)));return Array.from(h.slice(0,8)).map(x=>x.toString(16).padStart(2,'0')).join('');}
+const syPayload=()=>JSON.stringify({tasks:S.tasks,projects:S.projects,templates:S.templates,graphs:S.graphs,del:S.del,learn:{samples:S.learn.samples,ev:S.learn.ev},kb:S.kb,settings:{lead:S.settings.lead,nextNo:S.settings.nextNo}});
+async function syGh(method,body,raw){
+  const url='https://api.github.com/repos/'+SY.repo+'/contents/'+SYF+(method==='GET'&&SY.branch?'?ref='+encodeURIComponent(SY.branch):'');
+  let r;try{r=await fetch(url,{method,cache:'no-store',headers:{'Authorization':'Bearer '+SY.token,'Accept':raw?'application/vnd.github.raw+json':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},body:body?JSON.stringify(body):undefined});}
+  catch(e){throw Object.assign(new Error('Нет связи с GitHub. Проверьте интернет.'),{net:1});}
+  return r;}
+function syErr(r){const c=r.status;
+  if(c===401)return 'GitHub не принял токен (401): он неверный или истёк.';
+  if(c===403)return 'Доступ запрещён (403): у токена нет права «Contents: Read and write» на этот репозиторий, либо превышен лимит запросов.';
+  if(c===404)return 'Репозиторий не найден (404): проверьте название вида логин/planner-data и доступ токена к нему.';
+  return 'GitHub ответил ошибкой '+c+'.';}
+async function syRun(manual,depth){
+  if(!syCfg()||SYB)return null;if(!manual&&!SY.auto)return null;
+  if(!manual&&navigator.onLine===false)return null;
+  SYB=true;let res={ok:false};
+  try{
+    let r=await syGh('GET'),remote=null,sha=null;
+    if(r.status===404){remote=null;}
+    else if(r.status===200){const j=await r.json();sha=j.sha;let txt;
+      if(j.content&&j.encoding==='base64')txt=new TextDecoder().decode(syUn(j.content.replace(/\s/g,'')));
+      else{const rr=await syGh('GET',null,true);if(!rr.ok)throw Object.assign(new Error(syErr(rr)),{});txt=await rr.text();}
+      remote=await syDec(txt,SY.pass);}
+    else throw new Error(syErr(r));
+    let merged=null;
+    if(remote){const d=JSON.parse(remote);merged=mergeData(d);}
+    const pay=syPayload(),h=await syHash(pay),need=!remote||sha!==SY.sha||h!==SY.hash;
+    if(need){
+      const body={message:'sync '+new Date().toISOString(),content:syB64(new TextEncoder().encode(await syEnc(pay,SY.pass)))};
+      if(sha)body.sha=sha;if(SY.branch)body.branch=SY.branch;
+      const pr=await syGh('PUT',body);
+      if(pr.status===409||pr.status===422){SYB=false;if((depth||0)<2)return await syRun(manual,(depth||0)+1);throw new Error('Не удалось записать: данные в облаке меняются одновременно. Повторите позже.');}
+      if(!(pr.status===200||pr.status===201))throw new Error(syErr(pr));
+      const pj=await pr.json();SY.sha=pj.content&&pj.content.sha||null;SY.hash=h;}
+    else{SY.sha=sha;SY.hash=h;}
+    SY.last=Date.now();SY.err='';sySave();res={ok:true,merged,uploaded:need};
+  }catch(e){SY.err=e.message||String(e);sySave();res={ok:false,err:SY.err};}
+  finally{SYB=false;}
+  if(res.ok&&res.merged&&(res.merged.add+res.merged.upd+res.merged.del)>0){try{if(!dlg.open)render();}catch(e){}}
+  else try{if(tab==='setup'&&!dlg.open)render();}catch(e){}
+  return res;}
+function sySoon(){if(!syCfg()||!SY.auto||SYB)return;clearTimeout(SYT);SYT=setTimeout(()=>{syRun(false);},20000);}
+function syAgo(t){if(!t)return 'ещё не выполнялась';const m=Math.round((Date.now()-t)/60000);return m<1?'только что':m<60?m+' мин. назад':new Date(t).toLocaleString('ru-RU');}
+function syView(){
+  const on=syCfg();
+  let h='<h2>☁ Синхронизация между устройствами</h2>';
+  if(on){
+    h+=`<div class="card" style="display:block"><div class="s">Репозиторий: <b>${esc(SY.repo)}</b> · последняя синхронизация: ${syAgo(SY.last)}</div>
+    ${SY.err?`<div class="warn">${esc(SY.err)}</div>`:'<div class="s" style="color:var(--grn)">Данные в облаке зашифрованы на этом устройстве.</div>'}
+    <label class="cr" style="border:0"><input type="checkbox" data-act="syauto" ${SY.auto?'checked':''}><span>Автоматически: при запуске, при открытии приложения, через 20 сек. после изменений и раз в 5 минут</span></label>
+    <div class="bar"><button class="pri" data-act="synow">Синхронизировать сейчас</button><button class="dng" data-act="sydis">Отключить на этом устройстве</button></div>
+    <div class="s">Отключение удаляет токен и парольную фразу с этого устройства. Данные и облачная копия остаются.</div></div>`;
+  }else{
+    h+=`<div class="s">Данные шифруются на устройстве (AES-256, ключ из вашей парольной фразы) и кладутся в ваш личный приватный репозиторий GitHub. GitHub видит только зашифрованный файл. Парольную фразу и токен храню только на этом устройстве.</div>
+    <label class="f">Репозиторий (логин/название)</label><input type="text" id="syrepo" placeholder="ваш-логин/planner-data" autocomplete="off">
+    <label class="f">Токен GitHub (fine-grained, доступ только к этому репозиторию, Contents: Read and write)</label><input type="password" id="sytoken" autocomplete="off">
+    <label class="f">Парольная фраза для шифрования (одна и та же на всех устройствах)</label><input type="password" id="sypass" autocomplete="off">
+    <div class="warn">Если потеряете парольную фразу, расшифровать облачную копию будет невозможно. Запишите её отдельно.</div>
+    <div class="bar"><button class="pri" data-act="syconn">Подключить и проверить</button></div>
+    <details><summary>Как создать репозиторий и токен (5 минут)</summary><div class="s">
+    1. На github.com: «+» → New repository → название planner-data → <b>Private</b> → Create.<br>
+    2. Settings (ваш профиль) → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token.<br>
+    3. Repository access: Only select repositories → planner-data. Permissions → Repository permissions → <b>Contents: Read and write</b>. Срок: до года.<br>
+    4. Скопируйте токен (он показывается один раз) и вставьте выше. Придумайте парольную фразу (не пароль от GitHub).<br>
+    5. На втором устройстве введите те же репозиторий, токен и парольную фразу.</div></details>`;
+  }
+  return h;}
 const proj=id=>S.projects.find(p=>p.id===id);
 let tab='today';
 let ui={po:'',fp:'',fs:'open',fk:'',reserve:false,mode:S.tasks.some(t=>t.type)?'blocks':'list',doc:{tpl:'',project:'',task:'',vals:{}}};
@@ -1388,6 +1475,7 @@ function vSetup(){
   <p class="s">Как это работает: когда вы нажимаете «⏱ Сделал» и закрываете задачу, программа сравнивает ваши часы с первой оценкой. Если вы систематически занижаете время (например, письма), планировщик умножает оценку на поправку. Всё считается на этом устройстве, данные никуда не отправляются.</p>
   <h2>Объекты</h2>${S.projects.map(p=>`<div class="card"><div class="grow" data-act="pedit" data-id="${p.id}"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.contract)} ${p.customer?'· '+esc(p.customer):''}</div></div></div>`).join('')}
   <div class="bar"><button data-act="padd">+ Объект</button></div>
+  ${syView()}
   <h2>Данные</h2><div class="bar"><button data-act="export">Сохранить копию (JSON)</button>
   <button data-act="share">Отправить на другое устройство</button>
   <label class="btn">Принять копию (объединить)<input type="file" hidden accept=".json" data-act="jsonin"></label>
@@ -2472,6 +2560,13 @@ document.addEventListener('click',e=>{
     if(!('Notification' in window)){toast('Браузер не поддерживает уведомления');return;}
     Notification.requestPermission().then(p=>{toast(p==='granted'?'Уведомления включены':'Уведомления не разрешены');if(p==='granted')notify('Уведомления работают');render();});}
   else if(a==='demo')demo();
+  else if(a==='syconn'){const repo=($('#syrepo').value||'').trim().replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,''),token=($('#sytoken').value||'').trim(),pass=$('#sypass').value||'';
+    if(!/^[\w.-]+\/[\w.-]+$/.test(repo)){toast('Репозиторий: логин/название');return;}if(!token){toast('Вставьте токен');return;}if(pass.length<8){toast('Парольная фраза: не короче 8 символов');return;}
+    const old=SY;SY={repo,token,pass,auto:true};toast('Подключаю…');
+    syRun(true).then(r=>{if(r&&r.ok){sySave();toast('Подключено. '+(r.merged&&(r.merged.add+r.merged.upd)?'Получено из облака: '+(r.merged.add+r.merged.upd)+'. ':'')+(r.uploaded?'Данные отправлены.':''));render();}
+      else{const m=(r&&r.err)||'ошибка';SY=old;sySave();info('Не удалось подключить','<div class="warn">'+esc(m)+'</div>');}});}
+  else if(a==='synow'){toast('Синхронизирую…');syRun(true).then(r=>{if(r&&r.ok)toast('Синхронизировано');else toast((r&&r.err)||'Не удалось синхронизировать');render();});}
+  else if(a==='sydis'){if(confirm('Отключить синхронизацию на этом устройстве? Токен и парольная фраза будут удалены отсюда. Данные останутся.')){SY={};sySave();render();}}
   else if(a==='padd')projForm();
   else if(a==='pnew')projNew();
   else if(a==='po'){ui.po=id;render();window.scrollTo(0,0);}
@@ -2589,6 +2684,7 @@ document.addEventListener('change',e=>{
   else if(a==='fs'){ui.fs=el.value;render();}
   else if(a==='xlsx'){if(el.files[0])startImport(el.files[0]);el.value='';}
   else if(a==='ptender'){const pr=proj(el.dataset.id);if(pr){pr.tender=el.checked;save();render();}}
+  else if(a==='syauto'){SY.auto=el.checked;sySave();if(SY.auto)syRun(false);}
   else if(a==='pplan'){if(el.files[0])startImport(el.files[0],el.dataset.id);el.value='';}
   else if(a==='jsonin'){const f=el.files[0];if(!f)return;f.text().then(x=>{let d;try{d=JSON.parse(x);if(!d.tasks||!d.settings)throw 0;}catch(_){toast('Это не файл копии планнера');return;}
     const r=mergeData(d);render();toast('Объединено: добавлено '+r.add+', обновлено '+r.upd+', удалено '+r.del);});el.value='';}
@@ -2620,7 +2716,8 @@ function softRender(){
 }
 tick();
 applyKB();setInterval(()=>{tick();softRender();},30000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();softRender();}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();softRender();try{syRun(false);}catch(e){}}});
+setTimeout(()=>{try{syRun(false);}catch(e){}},2500);setInterval(()=>{try{syRun(false);}catch(e){}},300000);
 if(STAGE>=3){$('#tabs').innerHTML=[['today','📅','Сегодня'],['week','🗓','Неделя'],['proj','🏗','Проекты'],['risk','⚠','Риски'],['stat','📊','Статистика'],['plan','🗂','План'],['docs','✉','Документы'],['setup','⚙','Настройки']].map(x=>`<button data-tab="${x[0]}"><b>${x[1]}</b>${x[2]}</button>`).join('');}
 render();window.__cpr=1;
 if(STAGE>=3){lockNow();document.addEventListener('visibilitychange',()=>{if(document.hidden)hidAt=Date.now();else if(S.settings.pinh&&hidAt&&Date.now()-hidAt>120000)lockNow();});}
