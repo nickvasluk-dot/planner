@@ -311,7 +311,7 @@ const DEF_REMIND=`09:00 | План дня: откройте «Сегодня», 
 const KEY='gip_planner_v1';
 function load(){try{return JSON.parse(localStorage.getItem(KEY));}catch(e){return null;}}
 let S=load()||{};
-S.tasks=S.tasks||[];S.projects=S.projects||[];S.graphs=S.graphs||[];
+S.tasks=S.tasks||[];S.projects=S.projects||[];S.graphs=S.graphs||[];S.shop=S.shop||[];
 S.templates=S.templates&&S.templates.length?S.templates:JSON.parse(JSON.stringify(DEF_TPL));
 S.settings=Object.assign({remind:DEF_REMIND,critTypes:'Письмо, График, Состав проекта, Акт',blockNotify:'да',hours:7,homeHours:1,meetDays:'Вт, Чт',learn:'да',lead:{},otMax:2,otWeek:2,blocks:DEF_BLOCKS,company:'',signer:'',position:'',phone:'',prefix:'',nextNo:1},S.settings||{});
 if(!S.ver||S.ver<2){ // миграция: добавить новый шаблон «Докладная записка»
@@ -333,6 +333,7 @@ Object.keys(S.log).sort().slice(0,-14).forEach(k=>delete S.log[k]); // 7 ч = с
 S.learn=S.learn||{samples:[]};
 const LRN={min:8,nnMin:30,cap:300},LC={};
 const lt=t=>String(t.type||'').trim().toLowerCase()||'—';
+const SMALL=k=>k==='мелкие быстрые дела';
 const ly=o=>Math.max(-1.5,Math.min(1.5,Math.log(Math.max(.05,o.act)/Math.max(.05,o.est))));
 const lmean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
 function lstat(sm){const g=sm.reduce((x,o)=>x+ly(o),0)/(sm.length+3),by={};
@@ -455,7 +456,7 @@ function lsugView(){const a=lsug();if(!a.length)return '';
 S.kb=S.kb||{};S.kb.types=S.kb.types||{};S.kb.ans=S.kb.ans||{};S.kb.snz=S.kb.snz||{};S.kb.why=S.kb.why||[];
 if(!S.kb.seeded){String(S.settings.critTypes||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean).forEach(ty=>{if(!S.kb.types[ty])S.kb.types[ty]={stake:3};});S.kb.seeded=1;}
 const kt=ty=>S.kb.types[ty]||null;
-const stakeOf=t=>{const k=kt(lt(t));return k&&k.stake!==undefined?+k.stake||0:0;};
+const stakeOf=t=>{if(SMALL(lt(t)))return (+t.imp||2)>=3?2:0;const k=kt(lt(t));return k&&k.stake!==undefined?+k.stake||0:0;};
 const leadOf=t=>{const k=kt(lt(t));if(!k||k.stake===undefined)return 1;return k.lead!=null?+k.lead:(k.stake>=3?3:k.stake>=2?2:1);};
 const consOf=t=>{const k=kt(lt(t));return k&&k.cons?k.cons:'';};
 const isCrit=t=>stakeOf(t)>=2||String(S.settings.critTypes||'').toLowerCase().split(',').map(x=>x.trim()).includes(lt(t));
@@ -490,13 +491,13 @@ function kqs(){
     if(!(K.ans[id]&&now-K.ans[id]<5*864e5)&&!(K.snz[id]&&now-K.snz[id]<864e5))out.push({id,text:`«${t.title}» просрочено на ${-diff(t.due,t0)} дн. Почему не сделано?`,opts:[['forgot','Забыл / не заметил'],['time','Не хватило времени'],['wait','Жду данные от других'],['other','Были другие срочные дела'],['drop','Уже не нужно']]});});
   if(STAGE>=2)open.filter(t=>(t.mv||0)>=2).slice(0,1).forEach(t=>{const id='mv:'+t.id;if(!(K.ans[id]&&now-K.ans[id]<7*864e5)&&!(K.snz[id]&&now-K.snz[id]<864e5))out.push({id,text:`«${t.title}» переносили ${t.mv} раз. Почему?`,opts:[['data','Нет исходных данных'],['prio','Были задачи важнее'],['time','Не хватало времени'],['appr','Ждал согласования'],['dist','Отвлекали']]});});
   const cnt={};open.forEach(t=>{const k=lt(t);cnt[k]=(cnt[k]||0)+1;});
-  Object.keys(cnt).filter(k=>cnt[k]>=2&&!['—','звонок','входящие'].includes(k)&&(!kt(k)||kt(k).stake===undefined)).forEach(k=>{const id='stake:'+k;if(fresh(id))out.push({id,text:`Что произойдёт, если задачу типа «${k}» не сделать в срок?`,opts:[['3','Срыв плана предприятия, штраф, претензия'],['2','Недовольство заказчика, но поправимо'],['1','Внутренняя задержка'],['0','Практически ничего']]});});
-  Object.keys(S.kb.types).forEach(k=>{const v=S.kb.types[k];if(+v.stake<2||!cnt[k])return;
+  Object.keys(cnt).filter(k=>cnt[k]>=2&&!SMALL(k)&&!['—','звонок','входящие'].includes(k)&&(!kt(k)||kt(k).stake===undefined)).forEach(k=>{const id='stake:'+k;if(fresh(id))out.push({id,text:`Что произойдёт, если задачу типа «${k}» не сделать в срок?`,opts:[['3','Срыв плана предприятия, штраф, претензия'],['2','Недовольство заказчика, но поправимо'],['1','Внутренняя задержка'],['0','Практически ничего']]});});
+  Object.keys(S.kb.types).forEach(k=>{const v=S.kb.types[k];if(SMALL(k)||+v.stake<2||!cnt[k])return;
     if(v.hd===undefined){const id='hd:'+k;if(fresh(id))out.push({id,text:`Есть ли для «${k}» жёсткое число месяца, до которого нужно успеть (например, акты до 30-го)?`,opts:[['set','Да, указать число'],['no','Нет, срок у каждой свой']]});}});
-  const pairs=[];open.forEach(a=>{const ka=kt(lt(a));if(!a.project||!ka||+ka.stake<2)return;open.forEach(b=>{const lb=lt(b);if(b.project!==a.project||lb===lt(a)||['—','звонок','входящие'].includes(lb))return;
+  const pairs=[];open.forEach(a=>{const ka=kt(lt(a));if(!a.project||!ka||+ka.stake<2)return;open.forEach(b=>{const lb=lt(b);if(b.project!==a.project||lb===lt(a)||['—','звонок','входящие'].includes(lb)||SMALL(lb)||SMALL(lt(a)))return;
     const id='need:'+lt(a)+'|'+lb;if(!pairs.includes(id)&&fresh(id))pairs.push(id);});});
   pairs.slice(0,1).forEach(id=>{const [A,B]=id.slice(5).split('|');out.push({id,text:`В одном объекте есть «${A}» и «${B}». Нужно ли закончить «${B}» раньше, чем «${A}»?`,opts:[['yes','Да, «'+B+'» раньше'],['rev','Наоборот: «'+A+'» раньше'],['no','Нет, независимы']]});});
-  Object.keys(S.kb.types).forEach(k=>{const v=S.kb.types[k];if(+v.stake>=2&&v.hd!==undefined&&v.cons===undefined&&cnt[k]){const id='cons:'+k;if(fresh(id))out.push({id,text:`Одной фразой: что конкретно случится, если «${k}» сорвать? Эту фразу я буду добавлять в предупреждения.`,opts:[['set','Написать'],['skip','Пропустить']]});}});
+  Object.keys(S.kb.types).forEach(k=>{const v=S.kb.types[k];if(!SMALL(k)&&+v.stake>=2&&v.hd!==undefined&&v.cons===undefined&&cnt[k]){const id='cons:'+k;if(fresh(id))out.push({id,text:`Одной фразой: что конкретно случится, если «${k}» сорвать? Эту фразу я буду добавлять в предупреждения.`,opts:[['set','Написать'],['skip','Пропустить']]});}});
   if(S.settings.otAsked===undefined&&Object.keys(S.kb.types).some(k=>+S.kb.types[k].stake>=2))out.push({id:'ot:q',text:'Если критичный срок горит, готовы ли вы иногда задерживаться после работы? Сколько максимум?',opts:[['0:0','Нет, никогда'],['1:1','До 1 ч, 1 раз в неделю'],['2:2','До 2 ч, 2 раза в неделю'],['3:3','До 3 ч, 3 раза в неделю']]});
   const rq=[];open.forEach(t=>{const c=t.cp;if(!c||c.k||c.rkd!=='да'||!c.launchId||c.rkdSt==='got'||(c.rkdAsk&&c.rkdAsk>t0))return;
     const id='rkd:'+t.id;if(K.snz[id]&&now-K.snz[id]<864e5)return;const r0=c.reqId&&S.tasks.find(x=>x.id===c.reqId);if(r0&&isOpen(r0))return;
@@ -546,7 +547,7 @@ function kbAnswer(id,v,b){
     if(v==='no'||v==='part'){c.reqId=cpMk(t,'rkdreq','Запросить сроки предоставления РКД: '+c.num+' '+cpShort(t),'rkd',{'документ':'РКД на оборудование к этапу «'+cpShort(t)+'»','срок':fmt(t.start)},'РКД не предоставлено: запросить сроки. Этап ждёт исходные данные.','Письмо',fwdWd(t0,2)).id;
       t.status='wait';t.wait=t0;t.needsData='РКД';}
     toast(v==='yes'?'Создана задача: запросить график':v==='part'?'Созданы задачи: запрос сроков РКД и запрос графика':'Создана задача: запросить сроки предоставления РКД (кнопка ✉ готовит письмо)');}
-  else if(kind==='why'){const t=S.tasks.find(x=>x.id===rest);if(!t)return true;const k=(K.types[lt(t)]=K.types[lt(t)]||{});
+  else if(kind==='why'){const t=S.tasks.find(x=>x.id===rest);if(!t)return true;const k=SMALL(lt(t))?{}:(K.types[lt(t)]=K.types[lt(t)]||{});
     if(v==='forgot'){const cur=k.lead!=null?+k.lead:leadOf(t);k.lead=Math.min(10,cur+2);toast('Буду предупреждать о «'+lt(t)+'» раньше: за '+k.lead+' дн.');}
     else if(v==='time'){if(+t.est>0)t.est=Math.round(t.est*1.5*10)/10;toast('Оценка задачи увеличена, план пересчитан');}
     else if(v==='wait'){t.wait=t0;if(confirm('Составить запрос исходных данных?')){const tpl=S.templates.find(x=>x.id==='req');if(tpl){ui.doc={tpl:tpl.id,project:t.project,task:t.id,vals:{}};tab='docs';}}else toast('Задача отмечена: жду данные. Предупреждения по ней на 3 дня отключены.');}
@@ -878,7 +879,7 @@ function learnedView(){
   if(Object.keys(rc).length)h+='<div class="s" style="margin-top:8px"><b>Качество рекомендаций (как вы их оцениваете)</b></div>'+Object.keys(rc).map(k=>`<div class="s">${RN[k]||k}: принято ${rc[k].y}${rc[k].m?', изменено '+rc[k].m:''}, отклонено ${rc[k].n}</div>`).join('');
   return h;}
 S.del=S.del||{};
-const COLS=['tasks','projects','templates','graphs'];
+const COLS=['tasks','projects','templates','graphs','shop'];
 const clean=o=>{const c=Object.assign({},o);delete c.upd;delete c.cr;return JSON.stringify(c);};
 let SNAP={};COLS.forEach(c=>S[c].forEach(o=>{SNAP[o.id]=clean(o);}));
 const SNT={};S.tasks.forEach(t=>{SNT[t.id]=t.title;});
@@ -914,7 +915,7 @@ function mergeData(d){
     });
     Object.keys(D).forEach(id=>{const i=S[col].findIndex(x=>x.id===id);if(i>=0&&D[id]>(S[col][i].upd||0)){S[col].splice(i,1);r.del++;}});
   };
-  one('projects',p=>String(p.name||'').trim().toLowerCase());one('tasks',tkey);one('templates',null);one('graphs',null);
+  one('projects',p=>String(p.name||'').trim().toLowerCase());one('tasks',tkey);one('templates',null);one('shop',null);one('graphs',null);
   Object.keys(D).forEach(id=>{if(!S.del[id]||S.del[id]<D[id])S.del[id]=D[id];});
   const have=new Set(S.learn.samples.map(x=>x.id));((d.learn&&d.learn.samples)||[]).forEach(x=>{if(!have.has(x.id))S.learn.samples.push(x);});S.learn.samples.sort((a,b)=>a.ts-b.ts);S.learn.samples=S.learn.samples.slice(-LRN.cap);lfit();
   if(d.kb){Object.keys(d.kb.types||{}).forEach(k=>{if(!S.kb.types[k])S.kb.types[k]=d.kb.types[k];});Object.keys(d.kb.ans||{}).forEach(k=>{S.kb.ans[k]=Math.max(S.kb.ans[k]||0,d.kb.ans[k]);});}
@@ -946,7 +947,7 @@ async function syDec(file,pass){let f;try{f=JSON.parse(file);}catch(e){throw new
     return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:syUn(f.iv)},key,syUn(f.ct)));}
   catch(e){throw new Error('Неверная парольная фраза (или файл повреждён)');}}
 async function syHash(t){const h=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)));return Array.from(h.slice(0,8)).map(x=>x.toString(16).padStart(2,'0')).join('');}
-const syPayload=()=>JSON.stringify({tasks:S.tasks,projects:S.projects,templates:S.templates,graphs:S.graphs,del:S.del,learn:{samples:S.learn.samples,ev:S.learn.ev,iq:S.learn.iq||[]},kb:S.kb,settings:{lead:S.settings.lead,nextNo:S.settings.nextNo}});
+const syPayload=()=>JSON.stringify({tasks:S.tasks,projects:S.projects,templates:S.templates,graphs:S.graphs,shop:S.shop,del:S.del,learn:{samples:S.learn.samples,ev:S.learn.ev,iq:S.learn.iq||[]},kb:S.kb,settings:{lead:S.settings.lead,nextNo:S.settings.nextNo}});
 async function syGh(method,body,raw){
   const url='https://api.github.com/repos/'+SY.repo+'/contents/'+SYF+(method==='GET'&&SY.branch?'?ref='+encodeURIComponent(SY.branch):'');
   let r;try{r=await fetch(url,{method,cache:'no-store',headers:{'Authorization':'Bearer '+SY.token,'Accept':raw?'application/vnd.github.raw+json':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},body:body?JSON.stringify(body):undefined});}
@@ -1152,6 +1153,49 @@ function parseRemind(txt){
   }).filter(Boolean);
 }
 let swReg=null;
+/* ---------- ПОКУПКИ: один общий список, ввод с клавиатуры (в т.ч. диктовка клавиатурой) и кнопкой «🎤» ---------- */
+const SHNUM={один:1,одну:1,одно:1,одна:1,два:2,две:2,три:3,четыре:4,пять:5,шесть:6,семь:7,восемь:8,девять:9,десять:10};
+function shopSplit(txt){
+  return String(txt||'').split(/[\n;,]+|\s+и\s+|\s+а также\s+|\s+ещё\s+|\s+еще\s+/i).map(x=>x.trim().replace(/^[-–•*\d]+[.)]\s+/,'').replace(/[.!]+$/,'')).filter(Boolean).map(x=>{
+    const m=x.match(/^([а-яё]+)\s+(.+)$/i);if(m&&SHNUM[m[1].toLowerCase()])x=SHNUM[m[1].toLowerCase()]+' '+m[2];
+    return x.charAt(0).toUpperCase()+x.slice(1);});
+}
+function shopAdd(txt){
+  const items=shopSplit(txt);let n=0;
+  items.forEach(x=>{if(S.shop.some(i=>!i.done&&i.name.toLowerCase()===x.toLowerCase()))return;S.shop.push({id:uid(),name:x,done:false});n++;});
+  if(n){save();render();}
+  return {n,dup:items.length-n,items};
+}
+function shopClean(){const lim=Date.now()-7*864e5;S.shop=S.shop.filter(i=>!(i.done&&(i.doneAt||0)<lim));}
+function vBuy(){
+  const open=S.shop.filter(i=>!i.done),done=S.shop.filter(i=>i.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+  let h=`<form id="shopf" class="qa" style="margin:8px 0"><input type="text" id="shoptx" name="text" placeholder="Что купить? Например: молоко, 2 хлеба и яйца" autocomplete="off" enterkeyhint="done"><div class="bar"><button class="pri">+ Добавить</button><button type="button" data-act="shopmic">🎤 Продиктовать</button></div></form>`;
+  h+=`<div class="s">Несколько позиций разделяйте запятой или словом «и». Можно диктовать клавиатурой: нажмите значок микрофона на клавиатуре телефона.</div>`;
+  h+=open.length?`<h2>Купить (${open.length})</h2>`+open.map(i=>`<div class="cr" style="align-items:center"><input type="checkbox" data-act="shopdone" data-id="${i.id}"><span class="grow" data-act="shopedit" data-id="${i.id}">${esc(i.name)}</span><button type="button" data-act="shopdel" data-id="${i.id}" title="Удалить" style="padding:2px 9px">✕</button></div>`).join(''):`<div class="empty">Список пуст.</div>`;
+  if(done.length)h+=`<details style="margin-top:10px"><summary>Куплено (${done.length})</summary>${done.map(i=>`<div class="cr" style="align-items:center"><input type="checkbox" checked data-act="shopdone" data-id="${i.id}"><span class="grow" style="text-decoration:line-through;color:var(--mut)">${esc(i.name)}</span><button type="button" data-act="shopdel" data-id="${i.id}" style="padding:2px 9px">✕</button></div>`).join('')}<div class="bar"><button data-act="shopclr">Очистить купленные</button></div></details>`;
+  if(open.length)h+=`<div class="bar"><button data-act="shopshare">Поделиться списком</button></div>`;
+  return h;
+}
+let SRV=null;
+async function shopMic(){
+  const C=window.Capacitor,P=C&&C.Plugins&&C.Plugins.SpeechRecognition;
+  try{
+    if(isNative()){
+      if(!P){toast('Модуль голосового ввода не найден. Нужна новая сборка APK. Пока диктуйте клавиатурой.');return;}
+      const av=await P.available();if(av&&av.available===false){toast('Распознавание речи недоступно на этом телефоне. Диктуйте клавиатурой.');return;}
+      let pr=await P.checkPermissions();if(pr.speechRecognition!=='granted')pr=await P.requestPermissions();
+      if(pr.speechRecognition!=='granted'){toast('Нет разрешения на микрофон. Включите в настройках Android: Приложения → Планнер ГИПа → Разрешения.');return;}
+      const r=await P.start({language:'ru-RU',maxResults:1,prompt:'Назовите покупки',partialResults:false,popup:true});
+      const tx=r&&r.matches&&r.matches[0];if(!tx){toast('Не расслышал, попробуйте ещё раз');return;}
+      const a=shopAdd(tx);toast(a.n?'Добавлено: '+a.items.join(', '):'Уже в списке');return;}
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){toast('Голосовой ввод недоступен в этом браузере. Диктуйте клавиатурой.');return;}
+    const rc=new SR();rc.lang='ru-RU';rc.interimResults=false;rc.maxAlternatives=1;
+    rc.onresult=e=>{const tx=e.results[0][0].transcript;const a=shopAdd(tx);toast(a.n?'Добавлено: '+a.items.join(', '):'Уже в списке');};
+    rc.onerror=e=>toast('Ошибка распознавания: '+(e.error||''));rc.start();toast('Говорите…');
+  }catch(e){const m=String(e&&e.message||e);if(/cancel|no match|no speech|not match/i.test(m))toast('Ничего не распознано');else toast('Голосовой ввод: '+m.slice(0,80));}
+}
+
 /* ---------- Прерывания: вопрос после выполнения, анализ по часам / дням недели / числам месяца, учёт в плане ---------- */
 const DOWN=['вс','пн','вт','ср','чт','пт','сб'],DMB=['1–10 число','11–20 число','21–31 число'],dmb=d=>d<=10?0:d<=20?1:2,IQMIN=15;
 function iqAsk(t,hrs){
@@ -1197,12 +1241,12 @@ function intrView(){
   ins.push('План уже учитывает эти данные: в часы и дни с частыми прерываниями на блок ставится меньше работы (если резерв не задан вручную в настройках).');
   return h+ins.map(x=>`<div class="s" style="margin:6px 0">💡 ${esc(x)}</div>`).join('');}
 function sumDlg(k){
-  const t0=today(),open=S.tasks.filter(t=>isOpen(t)&&!isHome(t));let title,rows;
+  const t0=today(),wke=isWkEnd(t0),open=S.tasks.filter(t=>isOpen(t)&&(wke?isHome(t):!isHome(t)));let title,rows;
   if(k==='ow'){title='Просрочено';rows=open.filter(t=>t.due&&diff(t.due,t0)<0).sort((a,b)=>a.due<b.due?-1:1).map(t=>[t,(-diff(t.due,t0))+' дн.']);}
-  else if(k==='day'){title='На сегодня';rows=planDay('work').day.map(t=>[t,t.due?(diff(t.due,t0)<0?'срок '+fmt(t.due)+' (просрочена)':diff(t.due,t0)===0?'срок сегодня':'срок '+fmt(t.due)):'']);}
+  else if(k==='day'){title='На сегодня';rows=planDay(wke?'home':'work').day.map(t=>[t,t.due?(diff(t.due,t0)<0?'срок '+fmt(t.due)+' (просрочена)':diff(t.due,t0)===0?'срок сегодня':'срок '+fmt(t.due)):'']);}
   else{title='Сроки на 7 дней';rows=open.filter(t=>t.due&&diff(t.due,t0)>=0&&diff(t.due,t0)<=7).sort((a,b)=>a.due<b.due?-1:1).map(t=>[t,DOWN[dt(t.due).getDay()]+' '+fmt(t.due).slice(0,5)]);}
   dlg.onchange=null;dlg.onclose=null;
-  dlg.innerHTML=`<form method="dialog"><h3>${title}: ${rows.length}</h3>${rows.length?rows.slice(0,15).map(r=>`<div class="cr" style="align-items:flex-start"><span class="grow" data-act="edit" data-id="${r[0].id}">${esc(r[0].title.slice(0,80))}${r[0].comment?'':''}</span><span class="b ${k==='ow'?'red':''}">${esc(r[1])}</span></div>`).join('')+(rows.length>15?`<div class="s">…и ещё ${rows.length-15}. Полный список на вкладках «План» и «Неделя».</div>`:''):'<div class="s">Пусто.</div>'}<div class="row"><button value="cancel">Закрыть</button></div></form>`;
+  dlg.innerHTML=`<form method="dialog"><h3>${wke?'🏠 ':''}${title}: ${rows.length}</h3>${wke?'<div class="s">Сегодня выходной: показаны бытовые дела.</div>':''}${rows.length?rows.slice(0,15).map(r=>`<div class="cr" style="align-items:flex-start"><span class="grow" data-act="edit" data-id="${r[0].id}">${esc(r[0].title.slice(0,80))}${r[0].comment?'':''}</span><span class="b ${k==='ow'?'red':''}">${esc(r[1])}</span></div>`).join('')+(rows.length>15?`<div class="s">…и ещё ${rows.length-15}. Полный список на вкладках «План» и «Неделя».</div>`:''):'<div class="s">Пусто.</div>'}<div class="row"><button value="cancel">Закрыть</button></div></form>`;
   dlg.showModal();}
 
 /* ---------- Нативные уведомления (в Android-приложении): работают при закрытом приложении ---------- */
@@ -1210,12 +1254,16 @@ const LNP=()=>{try{const C=window.Capacitor;return C&&C.isNativePlatform&&C.isNa
 const isNative=()=>{try{return !!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());}catch(e){return false;}};
 let LNSTAT={perm:'',err:'',n:0,at:0},LNT=null;
 async function lnPerm(ask){const L=LNP();if(!L)return 'none';try{let r=await L.checkPermissions();if(r.display!=='granted'&&ask)r=await L.requestPermissions();LNSTAT.perm=r.display;return r.display;}catch(e){LNSTAT.err=String(e&&e.message||e);return 'err';}}
+
+function homeList(d,i){const t0=today();return S.tasks.filter(t=>isOpen(t)&&isHome(t)&&t.due&&(t.due===d||(i===0&&t.due<d))&&(i!==0||!notYet(t,t0)));}
+const homeTxt=(a,pre)=>pre+a.slice(0,4).map(t=>t.title).join('; ')+(a.length>4?' и ещё '+(a.length-4):'');
 function lnPlan(){
   const out=[],now=Date.now(),t0=today(),need={'критичные':3,'важные':2}[S.settings.nl]||1;
   const add=(at,body,key)=>{if(at>now+5000)out.push({at,body,key});};
   const atm=(d,m)=>{const x=dt(d);x.setHours(Math.floor(m/60),m%60,0,0);return x.getTime();};
   for(let i=0;i<8;i++){const d=addDays(t0,i),dow=dt(d).getDay(),wk=dow>=1&&dow<=5;
     parseRemind(S.settings.remind).forEach(r=>{if(r.days?!r.days.includes(dow):!wk)return;add(atm(d,r.m),r.text,'r');});
+    if(!S.settings.homeOff){const hl=homeList(d,i);if(hl.length){add(atm(d,wk?7*60:10*60),homeTxt(hl,'🏠 Бытовые дела на сегодня: '),'ha');add(atm(d,21*60),homeTxt(hl,'🏠 Не сделано из бытовых дел: '),'he');}}
     if(!wk)continue;
     S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&entOf(t)==='meeting'&&t.due===d&&t.mt).forEach(t=>{const mm=t.mt.match(/(\d+):(\d+)/);if(mm)add(atm(d,+mm[1]*60+ +mm[2]-10),'📅 Через 10 мин: '+t.title+' ('+t.mt+')','m');});
     const due=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&!isCallT(t)&&t.due===d&&(+t.imp||2)>=Math.max(2,need)||(isOpen(t)&&!isHome(t)&&t.due===d&&isCrit(t)));
@@ -1261,12 +1309,16 @@ function renderAlerts(){
 function tick(){
   try{slotCheck();}catch(e){}
   try{rollDaily();}catch(e){console.error(e);}
+  try{shopClean();}catch(e){}
   try{cpTick();}catch(e){console.error(e);}
   const nm=nowMin(),now=new Date(),dow=now.getDay(),workday=dow>=1&&dow<=5,t0=today();
   parseRemind(S.settings.remind).forEach(r=>{
     if(r.days?!r.days.includes(dow):!workday)return;
     if(nm>=r.m)addAlert('r'+r.m+r.text.slice(0,12),r.text,nm-r.m<20);
   });
+  if(!S.settings.homeOff&&S.tasks.length){const hl=homeList(t0,0),hs=workday?7*60:10*60;
+    if(hl.length&&nm>=hs)addAlert('hma'+t0,homeTxt(hl,'🏠 Бытовые дела на сегодня: '),nm-hs<60);
+    if(hl.length&&nm>=21*60)addAlert('hme'+t0,homeTxt(hl,'🏠 Не сделано из бытовых дел: '),nm-21*60<60);}
   if(!S.tasks.length||!workday)return;
   S.tasks.filter(t=>isOpen(t)&&entOf(t)==='meeting'&&t.due===t0&&t.mt).forEach(t=>{const mm=t.mt.match(/(\d+):(\d+)/);if(!mm)return;const f=+mm[1]*60+ +mm[2];if(nm>=f-10&&nm<f+10)addAlert('mt'+t.id+t0,'📅 Через '+Math.max(0,f-nm)+' мин: '+t.title+' ('+t.mt+')',true);});
   const act=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&!(t.wait&&diff(t0,t.wait)<3));
@@ -1451,11 +1503,12 @@ function homeSection(){
 function vToday(){
   const t0=today(),P=planDay('work');
   const open=S.tasks.filter(t=>isOpen(t));
-  const ow=open.filter(t=>!isHome(t)&&t.due&&diff(t.due,t0)<0).length;
-  const week=open.filter(t=>!isHome(t)&&t.due&&diff(t.due,t0)>=0&&diff(t.due,t0)<=7).length;
+  const wke=isWkEnd(t0),HP=wke?planDay('home'):P,hm_=wke?(t=>isHome(t)):(t=>!isHome(t));
+  const ow=open.filter(t=>hm_(t)&&t.due&&diff(t.due,t0)<0).length;
+  const week=open.filter(t=>hm_(t)&&t.due&&diff(t.due,t0)>=0&&diff(t.due,t0)<=7).length;
   const stale=open.filter(t=>t.due&&diff(t.due,t0)<-30).length;
   const cl0=callsToday();
-  let h=`<div class="sum"><button type="button" class="r" data-act="sumd" data-k="ow"><b>${ow}</b>просрочено</button><button type="button" data-act="sumd" data-k="day"><b>${P.day.length}</b>на сегодня</button><button type="button" data-act="sumd" data-k="wk"><b>${week}</b>сроков за 7 дн.</button></div>`;
+  let h=`<div class="sum"><button type="button" class="r" data-act="sumd" data-k="ow"><b>${ow}</b>${wke?'🏠 ':''}просрочено</button><button type="button" data-act="sumd" data-k="day"><b>${HP.day.length}</b>${wke?'🏠 ':''}на сегодня</button><button type="button" data-act="sumd" data-k="wk"><b>${week}</b>${wke?'🏠 ':''}сроков за 7 дн.</button></div>`;
   if(!S.tasks.length)return h+`<div class="empty">Задач пока нет.<br>Импортируйте календарный план из Excel (вкладка «План»), добавьте рабочую задачу или бытовую ниже.<br><br><button data-act="demo">Загрузить демо-данные</button></div>`+(STAGE>=2?`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить ОВ по объекту А до среды, два часа»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form><div class="bar"><button data-act="chat">💬 Помощник</button></div>`:'')+homeSection();
   if(P.overH>P.cap)h+=`<div class="warn">Просрочено ${P.overN} задач (≈${P.overH} ч) — это около ${Math.ceil(P.overH/P.cap)} рабочих дней при ${P.cap} ч в день, если новых задач не появится. Часть стоит удалить, делегировать или согласовать перенос.</div>`;
   if(syCfg())h+=`<div class="bar" style="align-items:center"><button class="pri" data-act="synow">⟳ Синхронизировать</button><span class="s" style="margin:0">${SY.err?'<span style="color:var(--red)">ошибка: '+esc(SY.err.slice(0,70))+'</span>':'☁ '+syAgo(SY.last)}</span></div>`;
@@ -1535,6 +1588,7 @@ function vSetup(){
   ${STAGE>=3?`<div class="g2"><div><label class="f">Какие уведомления получать</label><select data-s="nl"><option ${(s.nl||'все')==='все'?'selected':''}>все</option><option ${s.nl==='важные'?'selected':''}>важные</option><option ${s.nl==='критичные'?'selected':''}>критичные</option></select></div><div class="s">Критичные: сроки типов задач, красная зона, задержка после работы, встречи, ваши напоминания. Важные: плюс начало работ по плану и «не успели». Все: плюс начало блоков и итог дня.</div></div>`:''}
   <div class="bar"><button data-act="notif">Включить уведомления</button><button data-act="ics">Напоминания в календарь (.ics)</button><button data-act="paper">+ Ежедневно: разбор бумаг 15 мин</button></div>
   <p class="s">Уведомления: ${isNative()?(LNP()?(LNSTAT.perm==='granted'?'включены (работают при закрытом приложении), запланировано: '+LNSTAT.n:LNSTAT.perm==='denied'?'запрещены в настройках Android':'нажмите «Включить уведомления»')+(LNSTAT.err?'. Ошибка: '+esc(LNSTAT.err):''):'модуль не найден (нужна новая сборка APK)'):(('Notification' in window)?Notification.permission==='granted'?'включены':Notification.permission==='denied'?'запрещены в браузере':'не включены':'не поддерживаются')}. ${isNative()?'Напоминания, сроки на сегодня, звонки и встречи планируются на 7 дней вперёд и пересчитываются при каждом изменении и запуске.':'Они приходят, пока приложение открыто или работает в фоне; телефон может «усыпить» фоновую страницу. Для надёжных напоминаний используйте Android-приложение.'}</p>
+  <label class="cr" style="border:0"><input type="checkbox" data-act="homen" ${S.settings.homeOff?'':'checked'}><span>Напоминать о бытовых делах: в 7:00 в рабочий день, в 10:00 в выходной и в 21:00 о невыполненных</span></label>
   ${STAGE>=3?`<h2>Защита PIN-кодом</h2><div class="bar"><button data-act="pinset">${s.pinh?'Сменить PIN':'Установить PIN'}</button>${s.pinh?'<button data-act="pinclr">Убрать PIN</button><button data-act="pinlock">Заблокировать сейчас</button>':''}</div><p class="s">PIN закрывает экран приложения при запуске и после ${2} мин в фоне. Это защита от случайного взгляда, а не шифрование: данные лежат в памяти браузера этого устройства в открытом виде. Текст уведомлений тоже виден на заблокированном экране телефона. Для настоящей защиты включите блокировку экрана и шифрование диска телефона или компьютера.</p>`:''}
   <h2>Резерв и веса приоритета</h2>
   <div class="g2"><div><label class="f">Резерв на внеплановое, % (пусто — авто по статистике прерываний)</label><input type="text" inputmode="decimal" data-s="resv" value="${esc(s.resv!=null?s.resv:'')}"></div><div class="s">Сейчас: ${Math.round(reserveFrac()*100)}%</div></div>
@@ -2406,7 +2460,7 @@ function vStat(){
   h+=intrView();
   h+=`<h2>Что усвоила система</h2>${learnedView()}`;
   return h;}
-const NLV={sx:3,ld:3,rz:3,ot:3,mt:3,r:3,st:2,sl:2,m:2,b:1,end:1};
+const NLV={hma:3,hme:3,sx:3,ld:3,rz:3,ot:3,mt:3,r:3,st:2,sl:2,m:2,b:1,end:1};
 function alertLevel(key){const m=String(key).match(/^[a-z]+/);return NLV[m?m[0]:'']||2;}
 async function hashPin(p){const x='gip|'+p;try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(x));return 'h'+[...new Uint8Array(b)].map(v=>v.toString(16).padStart(2,'0')).join('');}catch(e){let a=0xdeadbeef,c=0x41c6ce57;for(let i=0;i<x.length;i++){const k=x.charCodeAt(i);a=Math.imul(a^k,2654435761);c=Math.imul(c^k,1597334677);}a=Math.imul(a^(a>>>16),2246822507)^Math.imul(c^(c>>>13),3266489909);return 'c'+(a>>>0).toString(16)+(c>>>0).toString(16);}}
 let pinFails=0;
@@ -2603,10 +2657,10 @@ async function chatSend(){
   CH.busy=false;chRender();}
 function render(){
   if(tab==='today')ensurePlan0();
-  $('#view').innerHTML=({today:vToday,plan:vPlan,docs:vDocs,setup:vSetup,week:vWeek,proj:vProj,risk:vRisk,stat:vStat})[tab]();
+  $('#view').innerHTML=({today:vToday,plan:vPlan,docs:vDocs,setup:vSetup,week:vWeek,proj:vProj,risk:vRisk,stat:vStat,buy:vBuy})[tab]();
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   renderAlerts();
-  $('header h1').textContent={today:'Сегодня',plan:'Календарный план',docs:'Письма и заявки',setup:'Настройки',week:'План на неделю',proj:'Проекты',risk:'Приоритеты и риски',stat:'Статистика и обучение'}[tab];
+  $('header h1').textContent={today:'Сегодня',plan:'Календарный план',docs:'Письма и заявки',setup:'Настройки',week:'План на неделю',proj:'Проекты',risk:'Приоритеты и риски',buy:'Покупки',stat:'Статистика и обучение'}[tab];
 }
 document.addEventListener('click',e=>{
   const tb=e.target.closest('[data-tab]');if(tb){tab=tb.dataset.tab;render();window.scrollTo(0,0);return;}
@@ -2641,8 +2695,12 @@ document.addEventListener('click',e=>{
     }else toast('Осталось '+rem(task)+' ч');
     save();render();}
   else if(a==='sumd'){sumDlg(b.dataset.k);}
+  else if(a==='shopmic'){shopMic();}
+  else if(a==='shopedit'){const i=S.shop.find(x=>x.id===id);if(!i)return;const v=prompt('Изменить позицию',i.name);if(v===null)return;const t=v.trim();if(!t){S.shop=S.shop.filter(x=>x.id!==id);}else i.name=t;save();render();}
+  else if(a==='shopdel'){S.shop=S.shop.filter(x=>x.id!==id);save();render();}
+  else if(a==='shopclr'){S.shop=S.shop.filter(x=>!x.done);save();render();toast('Купленное убрано');}
+  else if(a==='shopshare'){const tx='Купить:\n'+S.shop.filter(i=>!i.done).map(i=>'• '+i.name).join('\n');if(navigator.share)navigator.share({text:tx}).catch(()=>{});else{try{navigator.clipboard.writeText(tx);toast('Список скопирован');}catch(e){toast('Не удалось скопировать');}}}
   else if(a==='iq'){try{dlg.close('x');}catch(e){}let m=b.dataset.m;if(m==='x'){const v=prompt('Сколько минут вас отвлекали?','10');if(v===null){ui.iq=null;return;}m=parseInt(v,10);if(!(m>=0)){ui.iq=null;return;}}iqRec(+m);}
-  else if(a==='iqoff'){S.settings.iqoff=!b.checked;save();render();}
   else if(a==='replan'){render();toast('План пересчитан с '+hm(nowMin()));}
   else if(a==='dismiss'){dayLog().alerts.splice(+b.dataset.i,1);save();renderAlerts();}
   else if(a==='dismissall'){dayLog().alerts=[];save();renderAlerts();}
@@ -2771,6 +2829,9 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('change',e=>{
   const el=e.target,a=el.dataset&&el.dataset.act;if(!a)return;
+  if(a==='iqoff'){S.settings.iqoff=!el.checked;save();render();return;}
+  if(a==='homen'){S.settings.homeOff=!el.checked;save();render();return;}
+  if(a==='shopdone'){const i=S.shop.find(x=>x.id===el.dataset.id);if(i){i.done=el.checked;i.doneAt=el.checked?Date.now():0;save();render();}return;}
   if(a==='toggle'){const t=S.tasks.find(x=>x.id===el.dataset.id);
     const hq=+t.spent||+t.est||.5;
     if(el.checked&&t.repeat){repeatDone(t);save();render();toast('Повторяющаяся задача: следующий раз '+fmt(t.due));iqAsk(t,hq);return;}
@@ -2794,6 +2855,7 @@ document.addEventListener('change',e=>{
   else if(a==='dtask'){ui.doc.task=el.value;const t=S.tasks.find(x=>x.id===el.value);if(t&&t.project)ui.doc.project=t.project;ui.doc.vals={};render();}
 });
 document.addEventListener('submit',e=>{
+  if(e.target.id==='shopf'){e.preventDefault();const tx=String(new FormData(e.target).get('text')||'').trim();if(tx){const a=shopAdd(tx);toast(a.n?'Добавлено: '+a.items.join(', '):'Уже в списке');const el=$('#shoptx');if(el)el.focus();}return;}
   if(e.target.id==='qq'){e.preventDefault();const tx=String(new FormData(e.target).get('text')||'').trim();if(tx)quickAdd(tx);return;}
   if(e.target.id!=='qa')return;
   e.preventDefault();
@@ -2818,7 +2880,7 @@ tick();
 applyKB();setInterval(()=>{tick();softRender();},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();softRender();try{syRun(false);}catch(e){}try{lnSoon();}catch(e){}}});
 setTimeout(()=>{try{syRun(false);}catch(e){}},2500);setTimeout(()=>{try{lnPerm(false).then(()=>lnSync());}catch(e){}},3000);setInterval(()=>{try{syRun(false);}catch(e){}},300000);
-if(STAGE>=3){$('#tabs').innerHTML=[['today','📅','Сегодня'],['week','🗓','Неделя'],['proj','🏗','Проекты'],['risk','⚠','Риски'],['stat','📊','Статистика'],['plan','🗂','План'],['docs','✉','Документы'],['setup','⚙','Настройки']].map(x=>`<button data-tab="${x[0]}"><b>${x[1]}</b>${x[2]}</button>`).join('');}
+if(STAGE>=3){$('#tabs').innerHTML=[['today','📅','Сегодня'],['week','🗓','Неделя'],['proj','🏗','Проекты'],['risk','⚠','Риски'],['stat','📊','Статистика'],['buy','🛒','Покупки'],['plan','🗂','План'],['docs','✉','Документы'],['setup','⚙','Настройки']].map(x=>`<button data-tab="${x[0]}"><b>${x[1]}</b>${x[2]}</button>`).join('');}
 render();window.__cpr=1;
 if(STAGE>=3){lockNow();document.addEventListener('visibilitychange',()=>{if(document.hidden)hidAt=Date.now();else if(S.settings.pinh&&hidAt&&Date.now()-hidAt>120000)lockNow();});}
 </script>
