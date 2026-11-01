@@ -28,7 +28,7 @@ nav button.on{color:var(--pri);font-weight:600}
 .b.red{background:var(--red);color:#fff;border-color:var(--red)}
 .b.orange{background:var(--org);color:#fff;border-color:var(--org)}
 .sum{display:flex;gap:8px;margin:8px 0}
-.sum div{flex:1;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px;text-align:center}
+.sum div,.sum button{flex:1;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px;text-align:center;color:var(--tx);font:inherit;cursor:pointer}
 .sum b{display:block;font-size:22px}
 .sum .r b{color:var(--red)}
 h2{font-size:16px;margin:16px 0 4px}
@@ -388,7 +388,7 @@ function lsummary(){
 lfit();
 
 /* ---------- обучение приоритетам: по тому, какие задачи вы реально берёте в работу ---------- */
-Object.assign(S.learn,{ev:S.learn.ev||[],hits:S.learn.hits||[],dis:S.learn.dis||{}});
+Object.assign(S.learn,{ev:S.learn.ev||[],hits:S.learn.hits||[],dis:S.learn.dis||{},iq:S.learn.iq||[]});
 const PR={R:40,minEv:25,cap:400,clamp:25,H:6},PC={};
 const critSet=()=>new Set(String(S.settings.critTypes||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean));
 function lraw(t,t0){return {ty:lt(t),hm:isHome(t)?1:0,im:+t.imp||2,dd:t.due?Math.max(-30,Math.min(30,diff(t.due,t0))):99,es:Math.max(.1,rem(t)||+t.est||.5),ag:t.cr?Math.max(0,Math.min(90,Math.round((Date.now()-t.cr)/864e5))):0,hp:t.project?1:0,dg:t.status==='doing'?1:0};}
@@ -901,7 +901,7 @@ function stamp(){ // отметка времени изменения, «над�
   DC={};DR=null;RM=null;
   const lim=now-90*864e5;Object.keys(S.del).forEach(id=>{if(S.del[id]<lim)delete S.del[id];});
 }
-function save(){applyKB();stamp();try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('Не удалось сохранить данные');}try{sySoon();}catch(e){}}
+function save(){applyKB();stamp();try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('Не удалось сохранить данные');}try{sySoon();}catch(e){}try{lnSoon();}catch(e){}}
 const tkey=t=>[t.title,t.project,t.kind].map(x=>String(x||'').trim().toLowerCase()).join('|');
 function mergeData(d){
   const r={add:0,upd:0,del:0},D=d.del||{};
@@ -918,6 +918,7 @@ function mergeData(d){
   Object.keys(D).forEach(id=>{if(!S.del[id]||S.del[id]<D[id])S.del[id]=D[id];});
   const have=new Set(S.learn.samples.map(x=>x.id));((d.learn&&d.learn.samples)||[]).forEach(x=>{if(!have.has(x.id))S.learn.samples.push(x);});S.learn.samples.sort((a,b)=>a.ts-b.ts);S.learn.samples=S.learn.samples.slice(-LRN.cap);lfit();
   if(d.kb){Object.keys(d.kb.types||{}).forEach(k=>{if(!S.kb.types[k])S.kb.types[k]=d.kb.types[k];});Object.keys(d.kb.ans||{}).forEach(k=>{S.kb.ans[k]=Math.max(S.kb.ans[k]||0,d.kb.ans[k]);});}
+  S.learn.iq=S.learn.iq||[];{const hq=new Set(S.learn.iq.map(x=>x.ts));((d.learn&&d.learn.iq)||[]).forEach(x=>{if(!hq.has(x.ts))S.learn.iq.push(x);});S.learn.iq.sort((a,b)=>a.ts-b.ts);S.learn.iq=S.learn.iq.slice(-1500);}
   const hv=new Set(S.learn.ev.map(x=>x.id));((d.learn&&d.learn.ev)||[]).forEach(x=>{if(!hv.has(x.id))S.learn.ev.push(x);});S.learn.ev.sort((a,b)=>a.ts-b.ts);S.learn.ev=S.learn.ev.slice(-PR.cap);
   S.settings.lead=Object.assign({},(d.settings&&d.settings.lead)||{},S.settings.lead||{});pfit();
   const ids=new Set(S.projects.map(p=>p.id));S.tasks.forEach(t=>{if(t.project&&!ids.has(t.project))t.project='';});
@@ -945,7 +946,7 @@ async function syDec(file,pass){let f;try{f=JSON.parse(file);}catch(e){throw new
     return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:syUn(f.iv)},key,syUn(f.ct)));}
   catch(e){throw new Error('Неверная парольная фраза (или файл повреждён)');}}
 async function syHash(t){const h=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)));return Array.from(h.slice(0,8)).map(x=>x.toString(16).padStart(2,'0')).join('');}
-const syPayload=()=>JSON.stringify({tasks:S.tasks,projects:S.projects,templates:S.templates,graphs:S.graphs,del:S.del,learn:{samples:S.learn.samples,ev:S.learn.ev},kb:S.kb,settings:{lead:S.settings.lead,nextNo:S.settings.nextNo}});
+const syPayload=()=>JSON.stringify({tasks:S.tasks,projects:S.projects,templates:S.templates,graphs:S.graphs,del:S.del,learn:{samples:S.learn.samples,ev:S.learn.ev,iq:S.learn.iq||[]},kb:S.kb,settings:{lead:S.settings.lead,nextNo:S.settings.nextNo}});
 async function syGh(method,body,raw){
   const url='https://api.github.com/repos/'+SY.repo+'/contents/'+SYF+(method==='GET'&&SY.branch?'?ref='+encodeURIComponent(SY.branch):'');
   let r;try{r=await fetch(url,{method,cache:'no-store',headers:{'Authorization':'Bearer '+SY.token,'Accept':raw?'application/vnd.github.raw+json':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},body:body?JSON.stringify(body):undefined});}
@@ -1087,7 +1088,7 @@ function planBlocks(opt){
   const sc={},od=new Set(),left={},dcap={};
   work.forEach(t=>{sc[t.id]=score(t);if(t.due&&diff(t.due,t0)<=0)od.add(t.id);left[t.id]=rem(t);dcap[t.id]=+t.perDay>0?+t.perDay:Infinity;});
   const calls=work.filter(isCall).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999')||sc[b.id]-sc[a.id]);
-  const usedCalls=new Set(); // потерянное время уже учтено: план всегда считается от текущей минуты
+  const IM=iqModel();const usedCalls=new Set(); // потерянное время уже учтено: план всегда считается от текущей минуты
   const rows=getBlocks(opt).map((b,i)=>{
     const r={b,i,items:[],calls:[],text:'',cur:nm>=b.from&&nm<b.to,past:b.to<=nm,cap:0};
     if(b.fixed){r.text=b.fixed;return r;}
@@ -1095,7 +1096,7 @@ function planBlocks(opt){
     if(r.past)return r;
     let cap=(b.to-Math.max(b.from,nm))/60;
     const bm=meets.filter(m=>m.to>Math.max(b.from,nm)&&m.from<b.to);let ov=0;bm.forEach(m=>{ov+=Math.min(b.to,m.to)-Math.max(b.from,nm,m.from);});if(bm.length){r.busy=bm.map(m=>hm(m.from)+' '+m.title);cap=Math.max(0,cap-ov/60);}
-    const rf=opt.noReserve?0:reserveFrac();cap=Math.round(cap*(1-rf)*100)/100;r.cap=cap;let cur=Math.max(b.from,nm);
+    const rf=opt.noReserve?0:blockReserve(b,IM,t0);cap=Math.round(cap*(1-rf)*100)/100;r.cap=cap;let cur=Math.max(b.from,nm);
     if(b.calls){
       const cc=calls.filter(c=>!usedCalls.has(c.id)&&od.has(c.id)).slice(0,Math.max(0,Math.min(6,Math.floor(cap*0.5/0.1))));
       cc.forEach(c=>{usedCalls.add(c.id);cap=Math.round((cap-0.1)*100)/100;cur+=6;});r.calls=cc;
@@ -1151,8 +1152,97 @@ function parseRemind(txt){
   }).filter(Boolean);
 }
 let swReg=null;
+/* ---------- Прерывания: вопрос после выполнения, анализ по часам / дням недели / числам месяца, учёт в плане ---------- */
+const DOWN=['вс','пн','вт','ср','чт','пт','сб'],DMB=['1–10 число','11–20 число','21–31 число'],dmb=d=>d<=10?0:d<=20?1:2,IQMIN=15;
+function iqAsk(t,hrs){
+  if(S.settings.iqoff||isHome(t)||isCallT(t)||entOf(t)!=='task')return;
+  ui.iq={h:Math.max(.25,Math.round((+hrs||.5)*100)/100)};dlg.onchange=null;dlg.onclose=null;
+  dlg.innerHTML=`<form method="dialog"><h3>Прерывали ли вас, пока вы делали «${esc(t.title.slice(0,60))}»?</h3><div class="s">Сколько минут в сумме ушло на отвлечения. Это нужно, чтобы планировать день с учётом ваших реальных прерываний.</div><div class="bar" style="flex-wrap:wrap"><button type="button" class="pri" data-act="iq" data-m="0">Нет</button>${[5,10,15,30,60].map(m=>`<button type="button" data-act="iq" data-m="${m}">${m} мин</button>`).join('')}<button type="button" data-act="iq" data-m="x">Другое…</button></div><div class="row"><button value="cancel">Не отвечать</button></div></form>`;
+  try{dlg.showModal();}catch(e){}}
+function iqRec(m){
+  const q=ui.iq;if(!q)return;const n=new Date();
+  const e={ts:Date.now(),d:today(),h:n.getHours(),dw:n.getDay(),dm:n.getDate(),m,th:q.h};
+  S.learn.iq=S.learn.iq||[];S.learn.iq.push(e);if(S.learn.iq.length>1500)S.learn.iq.splice(0,S.learn.iq.length-1500);
+  if(m>0){const L=dayLog();L.lost=(L.lost||0)+m;L.hits=(L.hits||0)+1;S.learn.hits.push({h:e.h,m});if(S.learn.hits.length>200)S.learn.hits.shift();}
+  ui.iq=null;save();render();toast(m>0?'Записано: '+m+' мин прерываний':'Записано: без прерываний');}
+function iqModel(){
+  const q=(S.learn.iq||[]).filter(x=>x.th>0);if(q.length<IQMIN)return null;
+  const tot=a=>({m:a.reduce((z,x)=>z+x.m,0),h:a.reduce((z,x)=>z+x.th,0),n:a.length,k:a.filter(x=>x.m>0).length});
+  const g=tot(q),G=g.m/60/g.h,K=2;
+  const rate=a=>{const t=tot(a);return {r:(t.m/60+K*G)/(t.h+K),n:t.n,k:t.k,m:t.m,wh:t.h};};
+  return {q,g,G,rate,hour:h=>rate(q.filter(x=>x.h===h)),dow:d=>rate(q.filter(x=>x.dw===d)),dom:b=>rate(q.filter(x=>dmb(x.dm)===b))};}
+function blockReserve(b,IM,t0){
+  const v=S.settings.resv;if((v!==undefined&&v!==''&&v!==null&&!isNaN(+v))||!IM||IM.G<=0)return reserveFrac();
+  const d=dt(t0),hs=[];for(let h=Math.floor(b.from/60);h<Math.ceil(b.to/60);h++)hs.push(h);
+  const rh=hs.reduce((z,h)=>z+IM.hour(h).r,0)/Math.max(1,hs.length),f=IM.G*(rh/IM.G)*(IM.dow(d.getDay()).r/IM.G)*(IM.dom(dmb(d.getDate())).r/IM.G);
+  return Math.max(.03,Math.min(.5,f/(1+f)));}
+function intrView(){
+  const q=S.learn.iq||[],M=iqModel();
+  let h=`<h2>Прерывания</h2><label class="cr" style="border:0"><input type="checkbox" data-act="iqoff" ${S.settings.iqoff?'':'checked'}><span>Спрашивать о прерываниях после выполнения задачи</span></label>`;
+  if(!M)return h+`<div class="s">Пока мало данных: ${q.length} из ${IQMIN} ответов. После каждой выполненной задачи приложение спрашивает, сколько минут вас прерывали. Когда ответов хватит, здесь появится разбор по часам, дням недели и числам месяца, и план начнёт его учитывать.</div>`;
+  const pm=r=>Math.round(r.r*60),mx=Math.max(1,...[...Array(24).keys()].map(x=>pm(M.hour(x))));
+  const bar=(v,m)=>`<div style="background:var(--bd);border-radius:5px;height:7px;margin:2px 0 6px"><div style="width:${Math.round(100*v/m)}%;background:var(--org,#e08a00);height:7px;border-radius:5px"></div></div>`;
+  h+=`<div class="s">Ответов: ${M.g.n}. Прерывали в ${M.g.k} из них (${Math.round(100*M.g.k/M.g.n)}%), в среднем ${M.g.k?Math.round(M.g.m/M.g.k):0} мин. Потери: около ${Math.round(M.G*60)} мин на рабочий час. Время суток берётся по моменту завершения задачи.</div>`;
+  const hs=[...new Set(M.q.map(x=>x.h))].sort((a,b)=>a-b),hv=hs.map(x=>({h:x,...M.hour(x)}));
+  h+=`<div class="s" style="color:var(--tx)"><b>По времени суток</b> (мин потерь на рабочий час)</div>`+hv.map(x=>`<div class="s" style="color:var(--tx)">${x.h}:00–${x.h+1}:00 · ${pm(x)} мин <span style="color:var(--mut)">(ответов ${x.n})</span></div>${bar(pm(x),mx)}`).join('');
+  const dv=[1,2,3,4,5,6,0].map(d=>({d,...M.dow(d)})).filter(x=>x.n>0),mx2=Math.max(1,...dv.map(pm));
+  h+=`<div class="s" style="color:var(--tx)"><b>По дням недели</b></div>`+dv.map(x=>`<div class="s" style="color:var(--tx)">${DOWN[x.d]} · ${pm(x)} мин <span style="color:var(--mut)">(ответов ${x.n})</span></div>${bar(pm(x),mx2)}`).join('');
+  const mv=[0,1,2].map(b=>({b,...M.dom(b)})).filter(x=>x.n>0),mx3=Math.max(1,...mv.map(pm));
+  h+=`<div class="s" style="color:var(--tx)"><b>По числам месяца</b></div>`+mv.map(x=>`<div class="s" style="color:var(--tx)">${DMB[x.b]} · ${pm(x)} мин <span style="color:var(--mut)">(ответов ${x.n})</span></div>${bar(pm(x),mx3)}`).join('');
+  const top=a=>a.filter(x=>x.n>=3).sort((x,y)=>y.r-x.r)[0],low=a=>a.filter(x=>x.n>=3).sort((x,y)=>x.r-y.r)[0],ins=[];
+  const th=top(hv),lh=low(hv),td=top(dv),tm=top(mv);
+  if(th&&lh&&th.h!==lh.h)ins.push(`Больше всего прерывают около ${th.h}:00 (≈${pm(th)} мин/ч), спокойнее всего около ${lh.h}:00 (≈${pm(lh)} мин/ч): сложную работу лучше ставить на спокойные часы.`);
+  if(td)ins.push(`Самый «прерываемый» день недели: ${DOWN[td.d]} (≈${pm(td)} мин/ч).`);
+  if(tm&&mv.length>1)ins.push(`По числам месяца больше всего прерываний: ${DMB[tm.b]}.`);
+  ins.push('План уже учитывает эти данные: в часы и дни с частыми прерываниями на блок ставится меньше работы (если резерв не задан вручную в настройках).');
+  return h+ins.map(x=>`<div class="s" style="margin:6px 0">💡 ${esc(x)}</div>`).join('');}
+function sumDlg(k){
+  const t0=today(),open=S.tasks.filter(t=>isOpen(t)&&!isHome(t));let title,rows;
+  if(k==='ow'){title='Просрочено';rows=open.filter(t=>t.due&&diff(t.due,t0)<0).sort((a,b)=>a.due<b.due?-1:1).map(t=>[t,(-diff(t.due,t0))+' дн.']);}
+  else if(k==='day'){title='На сегодня';rows=planDay('work').day.map(t=>[t,t.due?(diff(t.due,t0)<0?'срок '+fmt(t.due)+' (просрочена)':diff(t.due,t0)===0?'срок сегодня':'срок '+fmt(t.due)):'']);}
+  else{title='Сроки на 7 дней';rows=open.filter(t=>t.due&&diff(t.due,t0)>=0&&diff(t.due,t0)<=7).sort((a,b)=>a.due<b.due?-1:1).map(t=>[t,DOWN[dt(t.due).getDay()]+' '+fmt(t.due).slice(0,5)]);}
+  dlg.onchange=null;dlg.onclose=null;
+  dlg.innerHTML=`<form method="dialog"><h3>${title}: ${rows.length}</h3>${rows.length?rows.slice(0,15).map(r=>`<div class="cr" style="align-items:flex-start"><span class="grow" data-act="edit" data-id="${r[0].id}">${esc(r[0].title.slice(0,80))}${r[0].comment?'':''}</span><span class="b ${k==='ow'?'red':''}">${esc(r[1])}</span></div>`).join('')+(rows.length>15?`<div class="s">…и ещё ${rows.length-15}. Полный список на вкладках «План» и «Неделя».</div>`:''):'<div class="s">Пусто.</div>'}<div class="row"><button value="cancel">Закрыть</button></div></form>`;
+  dlg.showModal();}
+
+/* ---------- Нативные уведомления (в Android-приложении): работают при закрытом приложении ---------- */
+const LNP=()=>{try{const C=window.Capacitor;return C&&C.isNativePlatform&&C.isNativePlatform()&&C.Plugins&&C.Plugins.LocalNotifications||null;}catch(e){return null;}};
+const isNative=()=>{try{return !!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());}catch(e){return false;}};
+let LNSTAT={perm:'',err:'',n:0,at:0},LNT=null;
+async function lnPerm(ask){const L=LNP();if(!L)return 'none';try{let r=await L.checkPermissions();if(r.display!=='granted'&&ask)r=await L.requestPermissions();LNSTAT.perm=r.display;return r.display;}catch(e){LNSTAT.err=String(e&&e.message||e);return 'err';}}
+function lnPlan(){
+  const out=[],now=Date.now(),t0=today(),need={'критичные':3,'важные':2}[S.settings.nl]||1;
+  const add=(at,body,key)=>{if(at>now+5000)out.push({at,body,key});};
+  const atm=(d,m)=>{const x=dt(d);x.setHours(Math.floor(m/60),m%60,0,0);return x.getTime();};
+  for(let i=0;i<8;i++){const d=addDays(t0,i),dow=dt(d).getDay(),wk=dow>=1&&dow<=5;
+    parseRemind(S.settings.remind).forEach(r=>{if(r.days?!r.days.includes(dow):!wk)return;add(atm(d,r.m),r.text,'r');});
+    if(!wk)continue;
+    S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&entOf(t)==='meeting'&&t.due===d&&t.mt).forEach(t=>{const mm=t.mt.match(/(\d+):(\d+)/);if(mm)add(atm(d,+mm[1]*60+ +mm[2]-10),'📅 Через 10 мин: '+t.title+' ('+t.mt+')','m');});
+    const due=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&!isCallT(t)&&t.due===d&&(+t.imp||2)>=Math.max(2,need)||(isOpen(t)&&!isHome(t)&&t.due===d&&isCrit(t)));
+    const uniq=[...new Set(due)];
+    if(uniq.length)add(atm(d,9*60),(i===0?'Срок сегодня: ':'Срок ('+fmt(d)+'): ')+uniq.slice(0,4).map(t=>t.title).join('; ')+(uniq.length>4?' и ещё '+(uniq.length-4):''),'d');
+    const cl=S.tasks.filter(t=>isOpen(t)&&isCallT(t)&&t.due===d);
+    if(cl.length)add(atm(d,9*60+30),'☎ Сегодня связаться: '+cl.slice(0,4).map(t=>t.who||t.title).join(', ')+(cl.length>4?' и ещё '+(cl.length-4):''),'c');
+    const st=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&t.start===d);
+    if(st.length)add(atm(d,9*60),'📅 По календарному плану сегодня начинается: '+st.slice(0,3).map(t=>t.title).join('; ')+(st.length>3?' и ещё '+(st.length-3):''),'s');
+  }
+  out.sort((a,b)=>a.at-b.at);return out.slice(0,60);
+}
+async function lnSync(){
+  const L=LNP();if(!L)return;
+  try{
+    const perm=await lnPerm(false);if(perm!=='granted')return;
+    const pend=await L.getPending();if(pend&&pend.notifications&&pend.notifications.length)await L.cancel({notifications:pend.notifications.map(n=>({id:n.id}))});
+    const plan=lnPlan();
+    if(plan.length)await L.schedule({notifications:plan.map((x,i)=>({id:1000+i,title:'Планнер ГИПа',body:x.body,schedule:{at:new Date(x.at),allowWhileIdle:true}}))});
+    LNSTAT.n=plan.length;LNSTAT.at=Date.now();LNSTAT.err='';
+  }catch(e){LNSTAT.err=String(e&&e.message||e);}
+}
+function lnSoon(){if(!LNP())return;clearTimeout(LNT);LNT=setTimeout(lnSync,4000);}
+async function lnNow(text){const L=LNP();if(!L)return false;try{if(await lnPerm(false)!=='granted')return false;await L.schedule({notifications:[{id:900+(Date.now()%90),title:'Планнер ГИПа',body:text,schedule:{at:new Date(Date.now()+700)}}]});return true;}catch(e){return false;}}
 function notify(text){
   try{
+    if(isNative()){lnNow(text);return;}
     if(!('Notification' in window)||Notification.permission!=='granted')return;
     const o={body:text,tag:'planner-'+Date.now(),icon:'icon-192.png',vibrate:[200,100,200]};
     if(swReg&&swReg.showNotification)swReg.showNotification('Планнер ГИПа',o);else new Notification('Планнер ГИПа',o);
@@ -1365,11 +1455,11 @@ function vToday(){
   const week=open.filter(t=>!isHome(t)&&t.due&&diff(t.due,t0)>=0&&diff(t.due,t0)<=7).length;
   const stale=open.filter(t=>t.due&&diff(t.due,t0)<-30).length;
   const cl0=callsToday();
-  let h=`<div class="sum"><div class="r"><b>${ow}</b>просрочено</div><div><b>${P.day.length}</b>на сегодня</div><div><b>${week}</b>сроков за 7 дн.</div></div>`;
+  let h=`<div class="sum"><button type="button" class="r" data-act="sumd" data-k="ow"><b>${ow}</b>просрочено</button><button type="button" data-act="sumd" data-k="day"><b>${P.day.length}</b>на сегодня</button><button type="button" data-act="sumd" data-k="wk"><b>${week}</b>сроков за 7 дн.</button></div>`;
   if(!S.tasks.length)return h+`<div class="empty">Задач пока нет.<br>Импортируйте календарный план из Excel (вкладка «План»), добавьте рабочую задачу или бытовую ниже.<br><br><button data-act="demo">Загрузить демо-данные</button></div>`+(STAGE>=2?`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить ОВ по объекту А до среды, два часа»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form><div class="bar"><button data-act="chat">💬 Помощник</button></div>`:'')+homeSection();
   if(P.overH>P.cap)h+=`<div class="warn">Просрочено ${P.overN} задач (≈${P.overH} ч) — это около ${Math.ceil(P.overH/P.cap)} рабочих дней при ${P.cap} ч в день, если новых задач не появится. Часть стоит удалить, делегировать или согласовать перенос.</div>`;
   if(syCfg())h+=`<div class="bar" style="align-items:center"><button class="pri" data-act="synow">⟳ Синхронизировать</button><span class="s" style="margin:0">${SY.err?'<span style="color:var(--red)">ошибка: '+esc(SY.err.slice(0,70))+'</span>':'☁ '+syAgo(SY.last)}</span></div>`;
-  h+=`<div class="bar"><button data-act="intr">☎ Прервали</button><button data-act="replan">⟳ Пересчитать план</button>${STAGE>=2?'<button data-act="chat">💬 Помощник</button>':''}${cl0.length?'':'<button data-act="newcall">+ Звонок</button>'}</div>`;
+  h+=`<div class="bar"><button data-act="replan">⟳ Пересчитать план</button>${STAGE>=2?'<button data-act="chat">💬 Помощник</button>':''}${cl0.length?'':'<button data-act="newcall">+ Звонок</button>'}</div>`;
   if(STAGE>=2)h+=`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить замечания по разделу ОВ для объекта А до среды, примерно два часа, после получения обновлённой схемы»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form>`;
   const cl=callsToday();if(cl.length)h+=callsView();
   const sig=[];
@@ -1444,7 +1534,7 @@ function vSetup(){
   <div class="g2"><div>${f('critTypes','Критичные типы задач (через запятую)')}</div><div><label class="f">Уведомлять о начале блока</label><select data-s="blockNotify"><option ${s.blockNotify!=='нет'?'selected':''}>да</option><option ${s.blockNotify==='нет'?'selected':''}>нет</option></select></div></div>
   ${STAGE>=3?`<div class="g2"><div><label class="f">Какие уведомления получать</label><select data-s="nl"><option ${(s.nl||'все')==='все'?'selected':''}>все</option><option ${s.nl==='важные'?'selected':''}>важные</option><option ${s.nl==='критичные'?'selected':''}>критичные</option></select></div><div class="s">Критичные: сроки типов задач, красная зона, задержка после работы, встречи, ваши напоминания. Важные: плюс начало работ по плану и «не успели». Все: плюс начало блоков и итог дня.</div></div>`:''}
   <div class="bar"><button data-act="notif">Включить уведомления</button><button data-act="ics">Напоминания в календарь (.ics)</button><button data-act="paper">+ Ежедневно: разбор бумаг 15 мин</button></div>
-  <p class="s">Уведомления: ${('Notification' in window)?Notification.permission==='granted'?'включены':Notification.permission==='denied'?'запрещены в браузере':'не включены':'не поддерживаются'}. Они приходят, пока приложение открыто или работает в фоне; телефон может «усыпить» фоновую страницу. Для надёжных напоминаний на Android скачайте .ics и откройте в Google Календаре: будильники календаря работают при закрытом приложении. Файл создаётся на 14 дней вперёд, перевыгружайте его раз в две недели.</p>
+  <p class="s">Уведомления: ${isNative()?(LNP()?(LNSTAT.perm==='granted'?'включены (работают при закрытом приложении), запланировано: '+LNSTAT.n:LNSTAT.perm==='denied'?'запрещены в настройках Android':'нажмите «Включить уведомления»')+(LNSTAT.err?'. Ошибка: '+esc(LNSTAT.err):''):'модуль не найден (нужна новая сборка APK)'):(('Notification' in window)?Notification.permission==='granted'?'включены':Notification.permission==='denied'?'запрещены в браузере':'не включены':'не поддерживаются')}. ${isNative()?'Напоминания, сроки на сегодня, звонки и встречи планируются на 7 дней вперёд и пересчитываются при каждом изменении и запуске.':'Они приходят, пока приложение открыто или работает в фоне; телефон может «усыпить» фоновую страницу. Для надёжных напоминаний используйте Android-приложение.'}</p>
   ${STAGE>=3?`<h2>Защита PIN-кодом</h2><div class="bar"><button data-act="pinset">${s.pinh?'Сменить PIN':'Установить PIN'}</button>${s.pinh?'<button data-act="pinclr">Убрать PIN</button><button data-act="pinlock">Заблокировать сейчас</button>':''}</div><p class="s">PIN закрывает экран приложения при запуске и после ${2} мин в фоне. Это защита от случайного взгляда, а не шифрование: данные лежат в памяти браузера этого устройства в открытом виде. Текст уведомлений тоже виден на заблокированном экране телефона. Для настоящей защиты включите блокировку экрана и шифрование диска телефона или компьютера.</p>`:''}
   <h2>Резерв и веса приоритета</h2>
   <div class="g2"><div><label class="f">Резерв на внеплановое, % (пусто — авто по статистике прерываний)</label><input type="text" inputmode="decimal" data-s="resv" value="${esc(s.resv!=null?s.resv:'')}"></div><div class="s">Сейчас: ${Math.round(reserveFrac()*100)}%</div></div>
@@ -2313,6 +2403,7 @@ function vStat(){
   h+=`<h2>Причины переносов</h2>`+(mt?mk.map(k=>`<div class="s" style="color:var(--tx)">${esc(k)}: ${mvr[k]}</div>${bar(mvr[k],mt,'var(--org)')}`).join(''):'<div class="s">Причины появятся, когда вы будете отвечать на вопрос после переноса задачи.</div>');
   h+=`<h2>Рекомендации системы: что вы приняли</h2>`+(Object.keys(byK).length?Object.keys(byK).map(k=>{const a=byK[k],ok=a.filter(v=>v>0).length;return `<div class="s" style="color:var(--tx)">${esc(k)}: принято ${ok} из ${a.length}</div>`;}).join('')+'<div class="s">Эти оценки учитываются при следующих предложениях.</div>':'<div class="s">Пока нет оценённых рекомендаций.</div>');
   h+=`<h2>Нагрузка по объектам (осталось часов)</h2>`+(lk2.length?lk2.map(k=>`<div class="s" style="color:var(--tx)">${esc(k)}: ${load[k].toFixed(1)} ч</div>${bar(load[k],mx)}`).join(''):'<div class="s">Нет открытых задач.</div>');
+  h+=intrView();
   h+=`<h2>Что усвоила система</h2>${learnedView()}`;
   return h;}
 const NLV={sx:3,ld:3,rz:3,ot:3,mt:3,r:3,st:2,sl:2,m:2,b:1,end:1};
@@ -2542,15 +2633,16 @@ document.addEventListener('click',e=>{
     if(!(+task.est>0))task.est=1;if(!task.est0)task.est0=task.est;task.spent=Math.round(((+task.spent||0)+h)*100)/100;
     if(rem(task)<=0.01){
       if(confirm('Всего потрачено '+task.spent+' ч. Задача закончена?\nОК — закончена. Отмена — нужно ещё время.')){
-        lrec(task);
+        lrec(task);const hq=+task.spent||+task.est||.5;
         if(task.repeat){repeatDone(task);toast('Следующий раз '+fmt(task.due));}
         else{task.status='done';task.doneAt=today();toast('Задача выполнена');}
+        setTimeout(()=>iqAsk(task,hq),50);
       }else{const x=parseFloat(String(prompt('Сколько ещё часов нужно?','1')||'').replace(',','.'));task.est=Math.round((task.spent+(x>0?x:0.5))*100)/100;toast('Оценка увеличена до '+task.est+' ч');}
     }else toast('Осталось '+rem(task)+' ч');
     save();render();}
-  else if(a==='intr'){
-    const v=prompt('Сколько минут вас отвлекали (уже прошло)?','10');if(v===null)return;
-    const m=parseInt(v,10);if(!(m>0))return;const L=dayLog();L.lost=(L.lost||0)+m;L.hits=(L.hits||0)+1;S.learn.hits.push({h:new Date().getHours(),m});if(S.learn.hits.length>200)S.learn.hits.shift();save();render();toast('Записано: '+m+' мин. План пересчитан от '+hm(nowMin()));}
+  else if(a==='sumd'){sumDlg(b.dataset.k);}
+  else if(a==='iq'){try{dlg.close('x');}catch(e){}let m=b.dataset.m;if(m==='x'){const v=prompt('Сколько минут вас отвлекали?','10');if(v===null){ui.iq=null;return;}m=parseInt(v,10);if(!(m>=0)){ui.iq=null;return;}}iqRec(+m);}
+  else if(a==='iqoff'){S.settings.iqoff=!b.checked;save();render();}
   else if(a==='replan'){render();toast('План пересчитан с '+hm(nowMin()));}
   else if(a==='dismiss'){dayLog().alerts.splice(+b.dataset.i,1);save();renderAlerts();}
   else if(a==='dismissall'){dayLog().alerts=[];save();renderAlerts();}
@@ -2562,6 +2654,8 @@ document.addEventListener('click',e=>{
   else if(a==='paper'){S.tasks.push({id:uid(),title:'Разбор бумаг (стопка на столе)',kind:'work',type:'Мелкие быстрые дела',project:'',start:'',due:today(),imp:2,est:0.25,spent:0,perDay:0,status:'todo',resp:'',note:'',repeat:'d'});save();toast('Добавлено: разбор бумаг каждый день, 15 минут');}
   else if(a==='ics'){download(new Blob([makeIcs()],{type:'text/calendar'}),'planner-reminders.ics');toast('Откройте файл в календаре телефона');}
   else if(a==='notif'){
+    if(isNative()){if(!LNP()){toast('Модуль уведомлений не найден в приложении. Нужна новая сборка APK.');return;}
+      lnPerm(true).then(async p=>{if(p==='granted'){await lnSync();await lnNow('Уведомления работают');toast('Уведомления включены, запланировано: '+LNSTAT.n);}else toast('Уведомления не разрешены. Включите их в настройках Android: Приложения → Планнер ГИПа → Уведомления.');render();});return;}
     if(!('Notification' in window)){toast('Браузер не поддерживает уведомления');return;}
     Notification.requestPermission().then(p=>{toast(p==='granted'?'Уведомления включены':'Уведомления не разрешены');if(p==='granted')notify('Уведомления работают');render();});}
   else if(a==='demo')demo();
@@ -2678,8 +2772,9 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',e=>{
   const el=e.target,a=el.dataset&&el.dataset.act;if(!a)return;
   if(a==='toggle'){const t=S.tasks.find(x=>x.id===el.dataset.id);
-    if(el.checked&&t.repeat){repeatDone(t);save();render();toast('Повторяющаяся задача: следующий раз '+fmt(t.due));return;}
-    if(el.checked)pev(t);t.status=el.checked?'done':'todo';t.doneAt=el.checked?today():'';if(el.checked)lrec(t);save();render();
+    const hq=+t.spent||+t.est||.5;
+    if(el.checked&&t.repeat){repeatDone(t);save();render();toast('Повторяющаяся задача: следующий раз '+fmt(t.due));iqAsk(t,hq);return;}
+    if(el.checked)pev(t);t.status=el.checked?'done':'todo';t.doneAt=el.checked?today():'';if(el.checked)lrec(t);save();render();if(el.checked)iqAsk(t,hq);
     if(el.checked&&(t.type||'').toLowerCase()==='акт'&&confirm('Задача выполнена. Сформировать заявку на подписание акта?')){const tpl=S.templates.find(x=>x.id==='act');ui.doc={tpl:tpl?tpl.id:ui.doc.tpl,project:t.project,task:t.id,vals:{}};tab='docs';render();}}
   else if(a==='wtxt'){const m={срочность:'urg',важность:'imp',последствия:'cons',влияние:'infl'},w={};el.value.split('\n').forEach(l=>{const p=l.split('|').map(x=>x.trim());if(m[p[0].toLowerCase()]&&p[1]!==''&&!isNaN(+p[1]))w[m[p[0].toLowerCase()]]=Math.max(0,Math.min(5,+p[1]));});S.settings.w=w;save();render();toast('Веса сохранены');}
   else if(a==='icsin'){const f=el.files[0];if(f)f.text().then(importIcs);el.value='';}
@@ -2721,8 +2816,8 @@ function softRender(){
 }
 tick();
 applyKB();setInterval(()=>{tick();softRender();},30000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();softRender();try{syRun(false);}catch(e){}}});
-setTimeout(()=>{try{syRun(false);}catch(e){}},2500);setInterval(()=>{try{syRun(false);}catch(e){}},300000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();softRender();try{syRun(false);}catch(e){}try{lnSoon();}catch(e){}}});
+setTimeout(()=>{try{syRun(false);}catch(e){}},2500);setTimeout(()=>{try{lnPerm(false).then(()=>lnSync());}catch(e){}},3000);setInterval(()=>{try{syRun(false);}catch(e){}},300000);
 if(STAGE>=3){$('#tabs').innerHTML=[['today','📅','Сегодня'],['week','🗓','Неделя'],['proj','🏗','Проекты'],['risk','⚠','Риски'],['stat','📊','Статистика'],['plan','🗂','План'],['docs','✉','Документы'],['setup','⚙','Настройки']].map(x=>`<button data-tab="${x[0]}"><b>${x[1]}</b>${x[2]}</button>`).join('');}
 render();window.__cpr=1;
 if(STAGE>=3){lockNow();document.addEventListener('visibilitychange',()=>{if(document.hidden)hidAt=Date.now();else if(S.settings.pinh&&hidAt&&Date.now()-hidAt>120000)lockNow();});}
