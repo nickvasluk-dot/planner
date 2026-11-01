@@ -1178,10 +1178,10 @@ function vBuy(){
 }
 let SRV=null;
 async function shopMic(){
-  const C=window.Capacitor,P=C&&C.Plugins&&C.Plugins.SpeechRecognition;
+  const P=isNative()?capPlugin('SpeechRecognition'):null;
   try{
     if(isNative()){
-      if(!P){toast('Модуль голосового ввода не найден. Нужна новая сборка APK. Пока диктуйте клавиатурой.');return;}
+      if(!P){info('Голосовой ввод недоступен','<div class="warn">Модуль распознавания речи не найден в этой сборке APK.</div><div class="s">Это значит, что собранный APK не содержит плагин (старая сборка или в репозитории не обновлены package.json и build.yml). Модули, которые есть в приложении: '+esc(capNames())+'.<br>Пока диктуйте клавиатурой: значок микрофона на клавиатуре телефона.</div>');return;}
       const av=await P.available();if(av&&av.available===false){toast('Распознавание речи недоступно на этом телефоне. Диктуйте клавиатурой.');return;}
       let pr=await P.checkPermissions();if(pr.speechRecognition!=='granted')pr=await P.requestPermissions();
       if(pr.speechRecognition!=='granted'){toast('Нет разрешения на микрофон. Включите в настройках Android: Приложения → Планнер ГИПа → Разрешения.');return;}
@@ -1250,7 +1250,9 @@ function sumDlg(k){
   dlg.showModal();}
 
 /* ---------- Нативные уведомления (в Android-приложении): работают при закрытом приложении ---------- */
-const LNP=()=>{try{const C=window.Capacitor;return C&&C.isNativePlatform&&C.isNativePlatform()&&C.Plugins&&C.Plugins.LocalNotifications||null;}catch(e){return null;}};
+const capPlugin=n=>{try{const C=window.Capacitor;if(!C)return null;if(C.Plugins&&C.Plugins[n])return C.Plugins[n];if(C.isPluginAvailable&&!C.isPluginAvailable(n))return null;return C.registerPlugin?C.registerPlugin(n):null;}catch(e){return null;}};
+const capNames=()=>{try{return (window.Capacitor.PluginHeaders||[]).map(h=>h.name).join(', ')||'список пуст';}catch(e){return '?';}};
+const LNP=()=>{try{const C=window.Capacitor;return C&&C.isNativePlatform&&C.isNativePlatform()?capPlugin('LocalNotifications'):null;}catch(e){return null;}};
 const isNative=()=>{try{return !!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());}catch(e){return false;}};
 let LNSTAT={perm:'',err:'',n:0,at:0},LNT=null;
 async function lnPerm(ask){const L=LNP();if(!L)return 'none';try{let r=await L.checkPermissions();if(r.display!=='granted'&&ask)r=await L.requestPermissions();LNSTAT.perm=r.display;return r.display;}catch(e){LNSTAT.err=String(e&&e.message||e);return 'err';}}
@@ -1510,8 +1512,9 @@ function vToday(){
   const cl0=callsToday();
   let h=`<div class="sum"><button type="button" class="r" data-act="sumd" data-k="ow"><b>${ow}</b>${wke?'🏠 ':''}просрочено</button><button type="button" data-act="sumd" data-k="day"><b>${HP.day.length}</b>${wke?'🏠 ':''}на сегодня</button><button type="button" data-act="sumd" data-k="wk"><b>${week}</b>${wke?'🏠 ':''}сроков за 7 дн.</button></div>`;
   if(!S.tasks.length)return h+`<div class="empty">Задач пока нет.<br>Импортируйте календарный план из Excel (вкладка «План»), добавьте рабочую задачу или бытовую ниже.<br><br><button data-act="demo">Загрузить демо-данные</button></div>`+(STAGE>=2?`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить ОВ по объекту А до среды, два часа»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form><div class="bar"><button data-act="chat">💬 Помощник</button></div>`:'')+homeSection();
+  let head0=h;h='';
   if(P.overH>P.cap)h+=`<div class="warn">Просрочено ${P.overN} задач (≈${P.overH} ч) — это около ${Math.ceil(P.overH/P.cap)} рабочих дней при ${P.cap} ч в день, если новых задач не появится. Часть стоит удалить, делегировать или согласовать перенос.</div>`;
-  if(syCfg())h+=`<div class="bar" style="align-items:center"><button class="pri" data-act="synow">⟳ Синхронизировать</button><span class="s" style="margin:0">${SY.err?'<span style="color:var(--red)">ошибка: '+esc(SY.err.slice(0,70))+'</span>':'☁ '+syAgo(SY.last)}</span></div>`;
+  if(syCfg())head0+=`<div class="bar" style="align-items:center"><button class="pri" data-act="synow">⟳ Синхронизировать</button><span class="s" style="margin:0">${SY.err?'<span style="color:var(--red)">ошибка: '+esc(SY.err.slice(0,70))+'</span>':'☁ '+syAgo(SY.last)}</span></div>`;
   h+=`<div class="bar"><button data-act="replan">⟳ Пересчитать план</button>${STAGE>=2?'<button data-act="chat">💬 Помощник</button>':''}${cl0.length?'':'<button data-act="newcall">+ Звонок</button>'}</div>`;
   if(STAGE>=2)h+=`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить замечания по разделу ОВ для объекта А до среды, примерно два часа, после получения обновлённой схемы»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form>`;
   const cl=callsToday();if(cl.length)h+=callsView();
@@ -1538,8 +1541,7 @@ function vToday(){
   }else h+=`<div class="bar"><button data-act="tomorrow">План на завтра и неделю</button></div>`;
   const tq=triageQueue();
   if(tq.length)h+=`<div class="warn">Ждут разбора: ${tq.length} (без срока, просрочены больше 30 дней или во входящих). <button data-act="triage">Разобрать</button></div>`;
-  const weekend=[0,6].includes(new Date().getDay());
-  if(weekend)h+=`<div class="warn">Сегодня выходной: бытовые дела вынесены наверх, рабочий план свернут.</div>`+homeSection()+'<details><summary>Рабочий план на сегодня</summary>';
+  const weekend=isWkEnd(t0);
   h+=`<div class="seg"><button data-act="mode" data-m="blocks" class="${ui.mode==='blocks'?'on':''}">По блокам дня</button><button data-act="mode" data-m="list" class="${ui.mode==='list'?'on':''}">Списком</button></div>`;
   if(ui.mode==='blocks')h+=blockView();
   else{
@@ -1551,9 +1553,9 @@ function vToday(){
   if(STAGE<3){const rl=risksList();if(rl.length)h+=`<details><summary>Риски по срокам (${rl.length})</summary>${riskView()}</details>`;}
   const pp=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&t.hold&&t.hold>t0&&t.mvd===t0&&!t.repeat);
   if(pp.length)h+=`<details style="margin-top:8px"><summary>⏳ Отложено сегодня (${pp.length})</summary>${pp.map(t=>`<div class="cr"><span class="grow s">${esc(t.title)} — до ${fmt(t.hold)}${t.due&&t.due<=t0?' <span class="b red">срок '+(t.due<t0?'прошёл':'сегодня')+'</span>':''}</span><button data-act="tunhold" data-id="${t.id}">Вернуть</button></div>`).join('')}</details>`;
-  if(weekend)return h+'</details>';
+  if(weekend)return head0+`<div class="warn">Сегодня выходной: показаны только бытовые дела. Рабочее свёрнуто ниже.</div>`+homeSection()+`<div class="bar"><button data-tab="buy">🛒 Список покупок${S.shop.filter(i=>!i.done).length?' ('+S.shop.filter(i=>!i.done).length+')':''}</button></div><details style="margin-top:10px"><summary>💼 Рабочее на сегодня (звонки, сигналы, план)</summary>${h}</details>`;
   const hn=planDay('home').day.length;
-  return h+`<details style="margin-top:10px"><summary><b>🏠 Дом</b> · на сегодня: ${hn}</summary>${homeSection()}</details>`;
+  return head0+h+`<details style="margin-top:10px"><summary><b>🏠 Дом</b> · на сегодня: ${hn}</summary>${homeSection()}</details>`;
 }
 function vPlan(){
   const t0=today();
@@ -1587,7 +1589,7 @@ function vSetup(){
   <div class="g2"><div>${f('critTypes','Критичные типы задач (через запятую)')}</div><div><label class="f">Уведомлять о начале блока</label><select data-s="blockNotify"><option ${s.blockNotify!=='нет'?'selected':''}>да</option><option ${s.blockNotify==='нет'?'selected':''}>нет</option></select></div></div>
   ${STAGE>=3?`<div class="g2"><div><label class="f">Какие уведомления получать</label><select data-s="nl"><option ${(s.nl||'все')==='все'?'selected':''}>все</option><option ${s.nl==='важные'?'selected':''}>важные</option><option ${s.nl==='критичные'?'selected':''}>критичные</option></select></div><div class="s">Критичные: сроки типов задач, красная зона, задержка после работы, встречи, ваши напоминания. Важные: плюс начало работ по плану и «не успели». Все: плюс начало блоков и итог дня.</div></div>`:''}
   <div class="bar"><button data-act="notif">Включить уведомления</button><button data-act="ics">Напоминания в календарь (.ics)</button><button data-act="paper">+ Ежедневно: разбор бумаг 15 мин</button></div>
-  <p class="s">Уведомления: ${isNative()?(LNP()?(LNSTAT.perm==='granted'?'включены (работают при закрытом приложении), запланировано: '+LNSTAT.n:LNSTAT.perm==='denied'?'запрещены в настройках Android':'нажмите «Включить уведомления»')+(LNSTAT.err?'. Ошибка: '+esc(LNSTAT.err):''):'модуль не найден (нужна новая сборка APK)'):(('Notification' in window)?Notification.permission==='granted'?'включены':Notification.permission==='denied'?'запрещены в браузере':'не включены':'не поддерживаются')}. ${isNative()?'Напоминания, сроки на сегодня, звонки и встречи планируются на 7 дней вперёд и пересчитываются при каждом изменении и запуске.':'Они приходят, пока приложение открыто или работает в фоне; телефон может «усыпить» фоновую страницу. Для надёжных напоминаний используйте Android-приложение.'}</p>
+  <p class="s">Уведомления: ${isNative()?(LNP()?(LNSTAT.perm==='granted'?'включены (работают при закрытом приложении), запланировано: '+LNSTAT.n:LNSTAT.perm==='denied'?'запрещены в настройках Android':'нажмите «Включить уведомления»')+(LNSTAT.err?'. Ошибка: '+esc(LNSTAT.err):''):'модуль не найден (нужна новая сборка APK; в приложении есть: '+esc(capNames())+')'):(('Notification' in window)?Notification.permission==='granted'?'включены':Notification.permission==='denied'?'запрещены в браузере':'не включены':'не поддерживаются')}. ${isNative()?'Напоминания, сроки на сегодня, звонки и встречи планируются на 7 дней вперёд и пересчитываются при каждом изменении и запуске.':'Они приходят, пока приложение открыто или работает в фоне; телефон может «усыпить» фоновую страницу. Для надёжных напоминаний используйте Android-приложение.'}</p>
   <label class="cr" style="border:0"><input type="checkbox" data-act="homen" ${S.settings.homeOff?'':'checked'}><span>Напоминать о бытовых делах: в 7:00 в рабочий день, в 10:00 в выходной и в 21:00 о невыполненных</span></label>
   ${STAGE>=3?`<h2>Защита PIN-кодом</h2><div class="bar"><button data-act="pinset">${s.pinh?'Сменить PIN':'Установить PIN'}</button>${s.pinh?'<button data-act="pinclr">Убрать PIN</button><button data-act="pinlock">Заблокировать сейчас</button>':''}</div><p class="s">PIN закрывает экран приложения при запуске и после ${2} мин в фоне. Это защита от случайного взгляда, а не шифрование: данные лежат в памяти браузера этого устройства в открытом виде. Текст уведомлений тоже виден на заблокированном экране телефона. Для настоящей защиты включите блокировку экрана и шифрование диска телефона или компьютера.</p>`:''}
   <h2>Резерв и веса приоритета</h2>
