@@ -334,6 +334,9 @@ S.learn=S.learn||{samples:[]};
 const LRN={min:8,nnMin:30,cap:300},LC={};
 const lt=t=>String(t.type||'').trim().toLowerCase()||'—';
 const SMALL=k=>k==='мелкие быстрые дела';
+const tmDay=t=>t.repeat?t.due:(t.start||t.due);
+const tmOk=t=>!!(t.tm&&/^\d{1,2}:\d{2}$/.test(t.tm));
+const tmMin=t=>{const m=String(t.tm).match(/(\d+):(\d+)/);return +m[1]*60+ +m[2];};
 const ly=o=>Math.max(-1.5,Math.min(1.5,Math.log(Math.max(.05,o.act)/Math.max(.05,o.est))));
 const lmean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
 function lstat(sm){const g=sm.reduce((x,o)=>x+ly(o),0)/(sm.length+3),by={};
@@ -751,6 +754,7 @@ function parseQuick(text){
   if(/совещани|встреч|планёрк|планерк|созвон/.test(low0)){o.ent='meeting';
     if((m=rest.match(/(\d{1,2})[:.](\d{2})\s*[-–—]\s*(\d{1,2})[:.](\d{2})/))){o.mt=pad(+m[1])+':'+m[2]+'-'+pad(+m[3])+':'+m[4];rest=rest.replace(m[0],'');}
     else if((m=rest.match(/\bв\s+(\d{1,2})[:.](\d{2})/))){const f=+m[1]*60+ +m[2];o.mt=hm(f)+'-'+hm(f+60);rest=rest.replace(m[0],'');}}
+  if(o.ent==='task'&&(m=rest.match(/(?:^|[\s,])в\s+(\d{1,2})[:.](\d{2})(?!\d)/))&&+m[1]<24&&+m[2]<60){o.tm=pad(+m[1])+':'+m[2];rest=rest.replace(m[0],' ');}
   const pd=parseDue(rest);if(pd){o.due=pd.date;rest=rest.replace(pd.text,'');}
   if(o.ent==='meeting'&&!o.due)o.due=today();
   const dm=rest.match(DURRX);if(dm){const d=parseDur(dm[0]);if(d>0){o.est=d;rest=rest.replace(dm[0],'');}}
@@ -769,6 +773,7 @@ function parseQuick(text){
   return o;}
 function taskFromQuick(q,src){
   const t={id:uid(),title:q.title.slice(0,200),kind:'work',type:q.type||'',project:q.project||'',start:'',due:q.due||'',imp:q.imp||2,est:q.est||(q.ent==='meeting'?1:1),status:'todo',resp:q.resp||'',note:q.note||q.orig,repeat:'',src:src||'быстрый ввод'};
+  if(q.tm)t.tm=q.tm;
   if(q.ent&&q.ent!=='task')t.ent=q.ent;if(q.mt)t.mt=q.mt;if(q.section)t.section=q.section;if(q.deps)t.deps=q.deps;
   if(q.needsData){t.needsData=q.needsData;if(!q.deps){t.status='wait';t.wait=today();}}
   if(t.due&&t.ent!=='meeting'&&isWkEnd(t.due))t.due=wdSnap(t.due);
@@ -782,7 +787,7 @@ function quickAdd(text,q){
   const t=taskFromQuick(q,q.ai?'быстрый ввод (ИИ-разбор)':'быстрый ввод');
   if(askDue||askProj){taskForm(null,'work',Object.assign({},t,{__hint:(askDue?'Не указан срок. ':'')+(askProj?'Не определён объект. ':'')+'Уточните и сохраните.'}));return;}
   S.tasks.push(t);save();render();toast('Добавлено: '+quickSummary(t));afterAdd(t);}
-function afterAdd(t){if(t.urgent&&isWork(t)&&entOf(t)==='task'&&isOpen(t)&&!unavail(t))setTimeout(()=>replanProposal(t),60);}
+function afterAdd(t){if(t.urgent&&!(t.start&&t.start>today())&&isWork(t)&&entOf(t)==='task'&&isOpen(t)&&!unavail(t))setTimeout(()=>replanProposal(t),60);}
 const aiLocal=h=>/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|.+\.local$)/.test(h);
 async function aiExtract(text,base){
   const sys='Ты помощник планировщика проектировщика. Из текста поручения извлеки поля и верни ТОЛЬКО JSON без пояснений: {"title":строка,"project":строка или null,"due":"YYYY-MM-DD" или null,"hours":число или null,"needs":"что нужно получить до начала" или null,"type":строка или null,"urgent":true или false,"section":строка или null}. Не выдумывай: чего нет в тексте, ставь null. '+aiCtx();
@@ -1042,7 +1047,7 @@ function scoreParts(t){
   P.total=P.imp+P.urg+P.cons+P.infl+P.doing;return P;}
 function scoreBase(t){if(isClosed(t))return -1;return scoreParts(t).total;}
 const byScore=(a,b)=>score(b)-score(a);
-function notYet(t,t0){if(t.hold&&diff(t.hold,t0)>0&&(t.hp||!(t.due&&diff(t.due,t0)<=0)))return true;return !!(t.start&&diff(t.start,t0)>0&&!(t.due&&diff(t.due,t0)<=3));}
+function notYet(t,t0){if(t.hold&&diff(t.hold,t0)>0&&(t.hp||!(t.due&&diff(t.due,t0)<=0)))return true;return !!(t.start&&diff(t.start,t0)>0&&!(t.due&&diff(t.due,t0)<=0));}
 /* список дня: kind='work' | 'home'; в план попадает то, что помещается в доступные часы (срок «сегодня» — всегда) */
 function planDay(kind){
   const t0=today(),home=kind==='home';
@@ -1056,6 +1061,7 @@ function planDay(kind){
     const e=rem(t),must=t.due&&diff(t.due,t0)===0;
     if(must||used+e<=cap||!day.length){day.push(t);used+=e;}else reserve.push(t);
   });
+  day.sort((a,b)=>{const ta=tmOk(a)&&tmDay(a)===t0,tb=tmOk(b)&&tmDay(b)===t0;return ta&&tb?tmMin(a)-tmMin(b):ta?-1:tb?1:0;});
   later.sort((a,b)=>(a.start||'').localeCompare(b.start||''));
   const od=open.filter(t=>t.due&&diff(t.due,t0)<0);
   const odH=od.reduce((s,t)=>s+rem(t),0);
@@ -1082,9 +1088,11 @@ function reserveFrac(){const v=S.settings.resv;if(v!==undefined&&v!==''&&v!==nul
 function planBlocks(opt){
   opt=opt||{};
   const t0=today(),nm=opt.now!=null?opt.now:nowMin(),lost=opt.lost!=null?opt.lost:(dayLog().lost||0);
-  const work=S.tasks.filter(t=>isOpen(t)&&isWork(t)&&!unavail(t)&&!isHome(t)&&!notYet(t,t0)&&rem(t)>0.01);
+  const timed=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&entOf(t)==='task'&&tmOk(t)&&tmDay(t)===t0&&!unavail(t)&&rem(t)>0.01),timedIds=new Set(timed.map(t=>t.id));
+  const work=S.tasks.filter(t=>isOpen(t)&&isWork(t)&&!unavail(t)&&!isHome(t)&&!notYet(t,t0)&&rem(t)>0.01&&!timedIds.has(t.id));
   const meet=meetDays().includes(dt(t0).getDay());
   const meets=S.tasks.filter(t=>isOpen(t)&&entOf(t)==='meeting'&&t.mt&&(t.due===t0||(t.dly&&dlyOn(t,t0)&&diff(t0,t.due)>0))).map(t=>{const m=(t.due===t0?t.mt:(t.mt0||t.mt)).match(/(\d+):(\d+)-(\d+):(\d+)/);return m?{from:+m[1]*60+ +m[2],to:+m[3]*60+ +m[4],title:t.title}:null;}).filter(Boolean);
+  timed.forEach(t=>{const f=tmMin(t);meets.push({from:f,to:f+Math.max(15,Math.round(rem(t)*60)),title:t.title});});
   const isCall=t=>(t.type||'').toLowerCase()==='звонок';
   const sc={},od=new Set(),left={},dcap={};
   work.forEach(t=>{sc[t.id]=score(t);if(t.due&&diff(t.due,t0)<=0)od.add(t.id);left[t.id]=rem(t);dcap[t.id]=+t.perDay>0?+t.perDay:Infinity;});
@@ -1266,6 +1274,7 @@ function lnPlan(){
   for(let i=0;i<8;i++){const d=addDays(t0,i),dow=dt(d).getDay(),wk=dow>=1&&dow<=5;
     parseRemind(S.settings.remind).forEach(r=>{if(r.days?!r.days.includes(dow):!wk)return;add(atm(d,r.m),r.text,'r');});
     if(!S.settings.homeOff){const hl=homeList(d,i);if(hl.length){add(atm(d,wk?7*60:10*60),homeTxt(hl,'🏠 Бытовые дела на сегодня: '),'ha');add(atm(d,21*60),homeTxt(hl,'🏠 Не сделано из бытовых дел: '),'he');}}
+    S.tasks.filter(t=>isOpen(t)&&entOf(t)==='task'&&tmOk(t)&&tmDay(t)===d).forEach(t=>{const f=tmMin(t);add(atm(d,f-10),'⏰ Через 10 мин: '+t.title+' ('+t.tm+')','tm');add(atm(d,f),'⏰ Сейчас: '+t.title,'tn');});
     if(!wk)continue;
     S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&entOf(t)==='meeting'&&t.due===d&&t.mt).forEach(t=>{const mm=t.mt.match(/(\d+):(\d+)/);if(mm)add(atm(d,+mm[1]*60+ +mm[2]-10),'📅 Через 10 мин: '+t.title+' ('+t.mt+')','m');});
     const due=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&!isCallT(t)&&t.due===d&&(+t.imp||2)>=Math.max(2,need)||(isOpen(t)&&!isHome(t)&&t.due===d&&isCrit(t)));
@@ -1321,6 +1330,7 @@ function tick(){
   if(!S.settings.homeOff&&S.tasks.length){const hl=homeList(t0,0),hs=workday?7*60:10*60;
     if(hl.length&&nm>=hs)addAlert('hma'+t0,homeTxt(hl,'🏠 Бытовые дела на сегодня: '),nm-hs<60);
     if(hl.length&&nm>=21*60)addAlert('hme'+t0,homeTxt(hl,'🏠 Не сделано из бытовых дел: '),nm-21*60<60);}
+  S.tasks.filter(t=>isOpen(t)&&entOf(t)==='task'&&tmOk(t)&&tmDay(t)===t0&&!isCallT(t)).forEach(t=>{const f=tmMin(t);if(nm>=f-10&&nm<f+10)addAlert('mt'+t.id+t0,nm<f?'⏰ Через '+(f-nm)+' мин: '+t.title+' ('+t.tm+')':'⏰ Сейчас: '+t.title,true);});
   if(!S.tasks.length||!workday)return;
   S.tasks.filter(t=>isOpen(t)&&entOf(t)==='meeting'&&t.due===t0&&t.mt).forEach(t=>{const mm=t.mt.match(/(\d+):(\d+)/);if(!mm)return;const f=+mm[1]*60+ +mm[2];if(nm>=f-10&&nm<f+10)addAlert('mt'+t.id+t0,'📅 Через '+Math.max(0,f-nm)+' мин: '+t.title+' ('+t.mt+')',true);});
   const act=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&!(t.wait&&diff(t0,t.wait)<3));
@@ -1439,7 +1449,7 @@ function dayCard(t){
   const p=proj(t.project),t0=today(),lv=dayLevel(t);let when='';
   if(isOpen(t)&&t.due){const d=diff(t.due,t0);when=d<0?`<span class="r">просрочено на ${-d} дн.</span>`:d===0?'<b>срок сегодня</b>':'срок '+fmt(t.due);}
   const cm=t.cm||(isOpen(t)&&isWork(t)&&!isHome(t)&&typeof consOf==='function'?consOf(t):'')||'';
-  const meta=[when,isHome(t)?'🏠 дом':'',t.repeat?'🔁 '+REPEAT[t.repeat]:'',p?esc(p.name):'',t.est?(t.spent?'осталось '+rem(t)+' из '+t.est+' ч':t.est+' ч'):'',['wait','block'].includes(t.status)?'⏳ '+stName(t.status):'',blockedBy(t).length&&isOpen(t)?'⛓ ждёт «'+esc(blockedBy(t)[0].title.slice(0,24))+'»':''].filter(Boolean).join(' · ');
+  const meta=[t.tm&&isOpen(t)?'<b>⏰ '+esc(t.tm)+(tmDay(t)&&tmDay(t)!==t0?' ('+fmt(tmDay(t)).slice(0,5)+')':'')+'</b>':'',when,isHome(t)?'🏠 дом':'',t.repeat?'🔁 '+REPEAT[t.repeat]:'',p?esc(p.name):'',t.est?(t.spent?'осталось '+rem(t)+' из '+t.est+' ч':t.est+' ч'):'',['wait','block'].includes(t.status)?'⏳ '+stName(t.status):'',blockedBy(t).length&&isOpen(t)?'⛓ ждёт «'+esc(blockedBy(t)[0].title.slice(0,24))+'»':''].filter(Boolean).join(' · ');
   return `<div class="dc ${lv} ${isClosed(t)?'done':''}"><input type="checkbox" data-act="toggle" data-id="${t.id}" ${isClosed(t)?'checked':''}>
   <div class="grow" data-act="edit" data-id="${t.id}"><div class="t">${esc(t.title)}</div>${cm?`<div class="cm">${esc(cm)}</div>`:''}<div class="mt">${meta}</div></div>
   ${isOpen(t)?`<div class="ac"><button data-act="tpost" data-id="${t.id}" title="Отложить">⏳ Отложить</button><button data-act="tmore" data-id="${t.id}" title="Ещё">⋯</button></div>`:''}</div>`;
@@ -2000,7 +2010,7 @@ function taskForm(t,kind,draft){
     {k:'kind',label:'Категория',type:'select',val:t.kind||'work',opts:[['work','Работа'],['home','Дом']]},
     {k:'type',label:'Тип задачи (для расписания по блокам)',val:t.type,list:allTypes()},
     {k:'project',label:'Объект',type:'select',val:t.project,opts:[['','—']].concat(S.projects.map(p=>[p.id,p.name]))},
-    {k:'start',label:'Начало',type:'date',val:t.start},{k:'due',label:'Срок (окончание)',type:'date',val:t.dueAuto?t.due0:t.due},
+    {k:'start',label:'Начало (дата)',type:'date',val:t.start},{k:'tm',label:'Время начала (необязательно, например 14:30)',type:'time',val:t.tm||''},{k:'due',label:'Срок (окончание)',type:'date',val:t.dueAuto?t.due0:t.due},
     {k:'repeat',label:'Повтор',type:'select',val:t.repeat||'',opts:[['','без повтора'],['d','каждый день'],['wd','по рабочим дням (пн–пт)'],['x','по выбранным дням (укажите ниже)'],['w','каждую неделю'],['m','каждый месяц']]},
     {k:'daysTxt',label:'Дни недели для «по выбранным дням» (например: пн, ср, пт)',val:daysText(t.days)},
     {k:'imp',label:'Важность',type:'select',val:t.imp,opts:[[3,'Высокая'],[2,'Обычная'],[1,'Низкая']]},
@@ -2021,6 +2031,7 @@ function taskForm(t,kind,draft){
     if(t.dueAuto){t.due=t.due0||'';delete t.dueAuto;delete t.due0;}
     const wasOpen=!isNew&&isOpen(t),dep=v.dep;delete v.dep;const dtx=v.daysTxt;delete v.daysTxt;
     Object.assign(t,v,{imp:+v.imp,est:+v.est||0,spent:+v.spent||0,perDay:+v.perDay||0,title:v.title.trim(),type:v.type.trim(),pct:v.pct===''?undefined:Math.max(0,Math.min(100,+v.pct||0))});
+    if(!/^\d{1,2}:\d{2}$/.test(t.tm||''))delete t.tm;else{const mm=t.tm.match(/(\d+):(\d+)/);t.tm=pad(+mm[1])+':'+mm[2];if(t.ent==='meeting'&&!t.mt){const f=+mm[1]*60+ +mm[2];t.mt=hm(f)+'-'+hm(f+Math.max(30,Math.round((+t.est||1)*60)));}}
     if(t.repeat==='x'){const dd=parseDays(dtx);t.days=dd.length?dd:[1,2,3,4,5];}else if(!t.dly)delete t.days;
     if(isDaily(t)&&t.due&&!patOk(t,t.due)){t.due=nextPat(t,t.due);toast('Первый раз: '+fmt(t.due));}
     if((t.kind||'work')==='work'&&t.due&&v.due!==dueOpen&&isWkEnd(t.due)){t.due=wdSnap(t.due);toast('Срок выпал на выходной: перенесён на '+fmt(t.due));}
@@ -2029,7 +2040,7 @@ function taskForm(t,kind,draft){
     if(t.status!=='wait')delete t.wait;
     if(t.status==='done'&&!t.doneAt){t.doneAt=today();lrec(t);}
     if(isNew&&!t.src)t.src='ввод вручную';
-    if(isNew&&(t.imp===3||(t.due&&diff(t.due,today())<=0))&&isWork(t))t.urgent=1;
+    if(isNew&&(t.imp===3||(t.due&&diff(t.due,today())<=0))&&isWork(t)&&!(t.start&&t.start>today()))t.urgent=1;
     if(isNew)S.tasks.push(t);save();render();if(isNew)afterAdd(t);
     const nr=newRisksCount?newRisksCount():0;if(nr)toast('После изменения под угрозой сроков: '+nr);
   },isNew?'':`<button type="button" class="dng" data-act="deltask" data-id="${t.id}">Удалить</button>`);
