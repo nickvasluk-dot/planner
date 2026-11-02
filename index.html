@@ -1206,6 +1206,12 @@ async function shopMic(){
 
 /* ---------- Прерывания: вопрос после выполнения, анализ по часам / дням недели / числам месяца, учёт в плане ---------- */
 const DOWN=['вс','пн','вт','ср','чт','пт','сб'],DMB=['1–10 число','11–20 число','21–31 число'],dmb=d=>d<=10?0:d<=20?1:2,IQMIN=15;
+
+function odAsk(t,wasDue,hq){
+  ui.od={id:t.id,h:hq,t:t};dlg.onchange=null;
+  dlg.innerHTML=`<form method="dialog"><h3>Выполнена просроченная задача</h3><div class="s">«${esc(t.title.slice(0,80))}» была просрочена (срок ${fmt(wasDue)}). Вы хотите, чтобы она повторно отобразилась сегодня?</div><div class="bar" style="flex-direction:column;align-items:stretch"><button type="button" class="pri" data-act="odyes" data-id="${t.id}">Да, показать сегодня как текущую</button><button type="button" data-act="odno" data-id="${t.id}">Нет, убрать из плана на сегодня</button></div></form>`;
+  dlg.onclose=()=>{const o=ui.od;ui.od=null;dlg.onclose=null;if(o)setTimeout(()=>iqAsk(o.t,o.h),0);};
+  dlg.showModal();}
 function iqAsk(t,hrs){
   if(S.settings.iqoff||isHome(t)||isCallT(t)||entOf(t)!=='task')return;
   ui.iq={h:Math.max(.25,Math.round((+hrs||.5)*100)/100)};dlg.onchange=null;dlg.onclose=null;
@@ -1601,7 +1607,7 @@ function vSetup(){
   <div class="bar"><button data-act="notif">Включить уведомления</button><button data-act="ics">Напоминания в календарь (.ics)</button><button data-act="paper">+ Ежедневно: разбор бумаг 15 мин</button></div>
   <p class="s">Уведомления: ${isNative()?(LNP()?(LNSTAT.perm==='granted'?'включены (работают при закрытом приложении), запланировано: '+LNSTAT.n:LNSTAT.perm==='denied'?'запрещены в настройках Android':'нажмите «Включить уведомления»')+(LNSTAT.err?'. Ошибка: '+esc(LNSTAT.err):''):'модуль не найден (нужна новая сборка APK; в приложении есть: '+esc(capNames())+')'):(('Notification' in window)?Notification.permission==='granted'?'включены':Notification.permission==='denied'?'запрещены в браузере':'не включены':'не поддерживаются')}. ${isNative()?'Напоминания, сроки на сегодня, звонки и встречи планируются на 7 дней вперёд и пересчитываются при каждом изменении и запуске.':'Они приходят, пока приложение открыто или работает в фоне; телефон может «усыпить» фоновую страницу. Для надёжных напоминаний используйте Android-приложение.'}</p>
   <label class="cr" style="border:0"><input type="checkbox" data-act="homen" ${S.settings.homeOff?'':'checked'}><span>Напоминать о бытовых делах: в 7:00 в рабочий день, в 10:00 в выходной и в 21:00 о невыполненных</span></label>
-  ${STAGE>=3?`<h2>Защита PIN-кодом</h2><div class="bar"><button data-act="pinset">${s.pinh?'Сменить PIN':'Установить PIN'}</button>${s.pinh?'<button data-act="pinclr">Убрать PIN</button><button data-act="pinlock">Заблокировать сейчас</button>':''}</div><p class="s">PIN закрывает экран приложения при запуске и после ${2} мин в фоне. Это защита от случайного взгляда, а не шифрование: данные лежат в памяти браузера этого устройства в открытом виде. Текст уведомлений тоже виден на заблокированном экране телефона. Для настоящей защиты включите блокировку экрана и шифрование диска телефона или компьютера.</p>`:''}
+  ${STAGE>=3?`<h2>Защита PIN-кодом</h2><div class="bar"><button data-act="pinset">${s.pinh?'Сменить PIN':'Установить PIN'}</button>${s.pinh?'<button data-act="pinclr">Убрать PIN</button><button data-act="pinlock">Заблокировать сейчас</button>':''}</div>${bioRow()}<p class="s">PIN закрывает экран приложения при запуске и после ${2} мин в фоне. Это защита от случайного взгляда, а не шифрование: данные лежат в памяти браузера этого устройства в открытом виде. Текст уведомлений тоже виден на заблокированном экране телефона. Для настоящей защиты включите блокировку экрана и шифрование диска телефона или компьютера.</p>`:''}
   <h2>Резерв и веса приоритета</h2>
   <div class="g2"><div><label class="f">Резерв на внеплановое, % (пусто — авто по статистике прерываний)</label><input type="text" inputmode="decimal" data-s="resv" value="${esc(s.resv!=null?s.resv:'')}"></div><div class="s">Сейчас: ${Math.round(reserveFrac()*100)}%</div></div>
   <label class="f">Веса критериев приоритета (1 — по умолчанию; 0 — не учитывать)</label>
@@ -2477,10 +2483,24 @@ const NLV={hma:3,hme:3,sx:3,ld:3,rz:3,ot:3,mt:3,r:3,st:2,sl:2,m:2,b:1,end:1};
 function alertLevel(key){const m=String(key).match(/^[a-z]+/);return NLV[m?m[0]:'']||2;}
 async function hashPin(p){const x='gip|'+p;try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(x));return 'h'+[...new Uint8Array(b)].map(v=>v.toString(16).padStart(2,'0')).join('');}catch(e){let a=0xdeadbeef,c=0x41c6ce57;for(let i=0;i<x.length;i++){const k=x.charCodeAt(i);a=Math.imul(a^k,2654435761);c=Math.imul(c^k,1597334677);}a=Math.imul(a^(a>>>16),2246822507)^Math.imul(c^(c>>>13),3266489909);return 'c'+(a>>>0).toString(16)+(c>>>0).toString(16);}}
 let pinFails=0;
+const BIO=()=>isNative()?capPlugin('NativeBiometric'):null;
+let bioBusy=false;
+async function bioAvail(){const B=BIO();if(!B)return false;try{const a=await B.isAvailable({useFallback:false});return !(a&&a.isAvailable===false);}catch(e){return false;}}
+async function bioAuth(){const B=BIO();if(!B||bioBusy)return false;bioBusy=true;
+  try{if(!(await bioAvail()))return false;await B.verifyIdentity({reason:'Вход в планнер',title:'Планнер ГИПа',subtitle:'Подтвердите личность',description:'Приложите палец или посмотрите на экран',useFallback:false,maxAttempts:3});return true;}
+  catch(e){return false;}finally{setTimeout(()=>{bioBusy=false;},400);}}
+function bioRow(){
+  if(!S.settings.pinh)return '<div class="s">Чтобы включить вход по отпечатку или лицу, сначала установите PIN (он остаётся запасным способом).</div>';
+  if(!isNative())return '<div class="s">Вход по отпечатку или лицу доступен только в Android-приложении.</div>';
+  if(!BIO())return '<div class="s">Модуль биометрии не найден в этой сборке APK (нужна новая сборка). Модули: '+esc(capNames())+'.</div>';
+  return `<div class="bar"><button data-act="bioset">${S.settings.bio?'Выключить вход по отпечатку/лицу':'Включить вход по отпечатку/лицу'}</button></div>${S.settings.bio?'<div class="s">Вход по биометрии включён. PIN остаётся запасным способом.</div>':''}`;}
 function lockNow(){
   if(!S.settings.pinh)return;
   let L=$('#lock');if(!L){L=document.createElement('div');L.id='lock';L.style.cssText='position:fixed;inset:0;z-index:99;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';document.body.appendChild(L);}
-  L.style.display='flex';L.innerHTML='<h2>Планнер ГИПа</h2><input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" style="font-size:22px;text-align:center;width:170px;padding:6px"><button class="pri" id="pinok" style="padding:8px 24px">Открыть</button><div class="s" id="pinmsg"></div>';
+  L.style.display='flex';L.innerHTML='<h2>Планнер ГИПа</h2><input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" style="font-size:22px;text-align:center;width:170px;padding:6px"><button class="pri" id="pinok" style="padding:8px 24px">Открыть</button><div class="s" id="pinmsg"></div>'+(S.settings.bio&&BIO()?'<button id="biobtn" style="padding:8px 18px">👆 Войти по отпечатку / лицу</button>':'');
+  const unlock=()=>{pinFails=0;L.style.display='none';L.innerHTML='';};
+  const tryBio=()=>bioAuth().then(ok=>{if(ok)unlock();else if($('#pinmsg'))$('#pinmsg').textContent='Биометрия не подтверждена. Введите PIN.';});
+  if(S.settings.bio&&BIO()){const bb=$('#biobtn');if(bb)bb.onclick=tryBio;setTimeout(tryBio,300);}
   const go=async()=>{const v=$('#pin').value;if(!v)return;const wait=Math.min(30,pinFails*pinFails);if(pinFails>=3){$('#pinmsg').textContent='Подождите '+wait+' с…';await new Promise(r=>setTimeout(r,wait*1000));}
     if(await hashPin(v)===S.settings.pinh){pinFails=0;L.style.display='none';L.innerHTML='';}else{pinFails++;$('#pinmsg').textContent='Неверный PIN';$('#pin').value='';}};
   $('#pinok').onclick=go;$('#pin').onkeydown=e=>{if(e.key==='Enter')go();};}
@@ -2700,14 +2720,16 @@ document.addEventListener('click',e=>{
     if(!(+task.est>0))task.est=1;if(!task.est0)task.est0=task.est;task.spent=Math.round(((+task.spent||0)+h)*100)/100;
     if(rem(task)<=0.01){
       if(confirm('Всего потрачено '+task.spent+' ч. Задача закончена?\nОК — закончена. Отмена — нужно ещё время.')){
-        lrec(task);const hq=+task.spent||+task.est||.5;
+        lrec(task);const hq=+task.spent||+task.est||.5,wasDue=task.due,late=task.repeat&&wasDue&&wasDue<today();
         if(task.repeat){repeatDone(task);toast('Следующий раз '+fmt(task.due));}
         else{task.status='done';task.doneAt=today();toast('Задача выполнена');}
-        setTimeout(()=>iqAsk(task,hq),50);
+        setTimeout(()=>{if(late)odAsk(task,wasDue,hq);else iqAsk(task,hq);},50);
       }else{const x=parseFloat(String(prompt('Сколько ещё часов нужно?','1')||'').replace(',','.'));task.est=Math.round((task.spent+(x>0?x:0.5))*100)/100;toast('Оценка увеличена до '+task.est+' ч');}
     }else toast('Осталось '+rem(task)+' ч');
     save();render();}
   else if(a==='sumd'){sumDlg(b.dataset.k);}
+  else if(a==='odyes'){if(task){task.due=today();task.status='todo';delete task.hold;delete task.hp;delete task.mvd;save();render();toast('Задача снова в плане на сегодня');}try{dlg.close('x');}catch(e){}}
+  else if(a==='odno'){if(task){toast('Задача убрана из плана на сегодня. Следующий раз: '+fmt(task.due));}try{dlg.close('x');}catch(e){}}
   else if(a==='shopmic'){shopMic();}
   else if(a==='shopedit'){const i=S.shop.find(x=>x.id===id);if(!i)return;const v=prompt('Изменить позицию',i.name);if(v===null)return;const t=v.trim();if(!t){S.shop=S.shop.filter(x=>x.id!==id);}else i.name=t;save();render();}
   else if(a==='shopdel'){S.shop=S.shop.filter(x=>x.id!==id);save();render();}
@@ -2793,8 +2815,9 @@ document.addEventListener('click',e=>{
   else if(a==='wk'){ui.wk=+b.dataset.o||0;render();}
   else if(a==='tomorrow'){ui.wk=0;tab='week';render();window.scrollTo(0,0);}
   else if(a==='pinset'){const p=prompt('Новый PIN (4–8 цифр):');if(p==null)return;if(!/^\d{4,8}$/.test(p)){toast('PIN: от 4 до 8 цифр');return;}hashPin(p).then(h=>{S.settings.pinh=h;save();render();toast('PIN установлен');});}
-  else if(a==='pinclr'){const p=prompt('Введите текущий PIN:');if(p==null)return;hashPin(p).then(h=>{if(h===S.settings.pinh){delete S.settings.pinh;save();render();toast('PIN убран');}else toast('Неверный PIN');});}
+  else if(a==='pinclr'){const p=prompt('Введите текущий PIN:');if(p==null)return;hashPin(p).then(h=>{if(h===S.settings.pinh){delete S.settings.pinh;delete S.settings.bio;save();render();toast('PIN убран');}else toast('Неверный PIN');});}
   else if(a==='pinlock'){lockNow();}
+  else if(a==='bioset'){if(S.settings.bio){delete S.settings.bio;save();render();toast('Вход по биометрии выключен');}else bioAuth().then(ok=>{if(ok){S.settings.bio=1;save();render();toast('Вход по биометрии включён');}else toast('Биометрия не подтверждена. Проверьте, что в телефоне настроен отпечаток или лицо.');});}
   else if(a==='mvr'){const t=task;if(t){t.mvr=(t.mvr||[]).concat([{d:today(),r:b.dataset.r}]).slice(-10);S.learn=S.learn||{};S.learn.mvr=S.learn.mvr||{};S.learn.mvr[b.dataset.r]=(S.learn.mvr[b.dataset.r]||0)+1;save();}dlg.close();}
   else if(a==='tdeleg'){if(task){let w=task.deleg;if(!w){w=prompt('Кому делегировать?','');if(!w)return;task.deleg=w.trim();}
     task.resp=task.deleg;task.status='wait';task.wait=today();task.needsData='результат от: '+task.deleg;save();render();toast('Делегировано: '+task.deleg+'. Задача ожидает результата.');}}
@@ -2846,8 +2869,8 @@ document.addEventListener('change',e=>{
   if(a==='homen'){S.settings.homeOff=!el.checked;save();render();return;}
   if(a==='shopdone'){const i=S.shop.find(x=>x.id===el.dataset.id);if(i){i.done=el.checked;i.doneAt=el.checked?Date.now():0;save();render();}return;}
   if(a==='toggle'){const t=S.tasks.find(x=>x.id===el.dataset.id);
-    const hq=+t.spent||+t.est||.5;
-    if(el.checked&&t.repeat){repeatDone(t);save();render();toast('Повторяющаяся задача: следующий раз '+fmt(t.due));iqAsk(t,hq);return;}
+    const hq=+t.spent||+t.est||.5,wasDue=t.due,late=el.checked&&t.repeat&&wasDue&&wasDue<today();
+    if(el.checked&&t.repeat){repeatDone(t);save();render();toast('Повторяющаяся задача: следующий раз '+fmt(t.due));if(late)odAsk(t,wasDue,hq);else iqAsk(t,hq);return;}
     if(el.checked)pev(t);t.status=el.checked?'done':'todo';t.doneAt=el.checked?today():'';if(el.checked)lrec(t);save();render();if(el.checked)iqAsk(t,hq);
     if(el.checked&&(t.type||'').toLowerCase()==='акт'&&confirm('Задача выполнена. Сформировать заявку на подписание акта?')){const tpl=S.templates.find(x=>x.id==='act');ui.doc={tpl:tpl?tpl.id:ui.doc.tpl,project:t.project,task:t.id,vals:{}};tab='docs';render();}}
   else if(a==='wtxt'){const m={срочность:'urg',важность:'imp',последствия:'cons',влияние:'infl'},w={};el.value.split('\n').forEach(l=>{const p=l.split('|').map(x=>x.trim());if(m[p[0].toLowerCase()]&&p[1]!==''&&!isNaN(+p[1]))w[m[p[0].toLowerCase()]]=Math.max(0,Math.min(5,+p[1]));});S.settings.w=w;save();render();toast('Веса сохранены');}
