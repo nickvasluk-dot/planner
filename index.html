@@ -83,7 +83,7 @@ details summary{cursor:pointer;color:var(--mut);margin:8px 0}
 </style>
 </head>
 <body>
-<header><h1>Планнер ГИПа</h1></header>
+<header><h1>Планнер ГИПа</h1><div id="syst" style="font-size:11px;opacity:.85;margin-top:2px"></div></header>
 <div id="alerts" style="max-width:900px;margin:0 auto;padding:0 12px"></div>
 <main id="view"></main>
 <nav id="tabs" style="overflow-x:auto">
@@ -667,7 +667,7 @@ function callsToday(){const t0=today();return S.tasks.filter(t=>isOpen(t)&&isCal
 function callCard(t){const imp=+t.imp||2,d=t.due?diff(t.due,today()):0,n=t.mv||0;
   return `<div class="cr" style="align-items:flex-start"><input type="checkbox" data-act="toggle" data-id="${t.id}" title="Позвонил — выполнено"><span class="grow" data-act="edit" data-id="${t.id}"><b>${esc(t.who||t.title)}</b>${t.topic?' — '+esc(t.topic):''}${t.phone?' · <a href="tel:'+esc(String(t.phone).replace(/[^\d+]/g,''))+'">'+esc(t.phone)+'</a>':''}
     <div class="s"><span title="Важность">${'●'.repeat(imp)}${'○'.repeat(3-imp)}</span>${d<0?' · <span class="b red">'+(-d)+' дн. назад</span>':''}${n?' · переносов: '+n:''}${t.imp0&&imp>t.imp0?' · важность повышена с '+t.imp0+' до '+imp:''}${imp>=3&&n?' · <b>уже не откладывается</b>':''}</div></span>
-    <button data-act="tdefer" data-id="${t.id}" title="Перенести (важность вырастет)">↪</button></div>`;}
+    <button data-act="tpost" data-id="${t.id}" title="Перенести на другой срок (важность вырастет)">↪ Перенести</button></div>`;}
 function callsView(){const L=callsToday();
   return `<div class="card" style="display:block"><div class="t">📞 Связаться сегодня${L.length?' ('+L.length+')':''}</div>${L.length?L.map(callCard).join(''):'<div class="s">На сегодня звонков нет.</div>'}<div class="bar"><button data-act="newcall">+ Звонок</button></div></div>`;}
 function callForm(t){
@@ -851,6 +851,10 @@ function riskView(){
   const L=risksList();
   return L.length?L.map(r=>`<div class="crit" style="border-color:${r.lvl>=3?'var(--red)':'var(--org)'}"><b>${r.lvl>=3?'🔴':'🟠'} ${esc(r.title)}</b><div class="s" style="margin:4px 0">${esc(r.text)}</div><div class="bar">${r.acts.map(a=>`<button data-act="${a[1]}" data-id="${a[2]}">${esc(a[0])}</button>`).join('')}</div></div>`).join(''):'<div class="empty">Явных рисков срыва сроков не обнаружено.</div>';}
 function impactText(t,nd){const od=t.due;t.due=nd;RM=null;const a=riskOf(t);t.due=od;RM=null;const b=riskOf(t);return 'риск: '+['нет','низкий','средний','высокий'][b.lvl||0]+' → '+['нет','низкий','средний','высокий'][a.lvl||0]+(a.text?' ('+a.text+')':'');}
+/* конфликты синхронизации: поле менялось на двух устройствах по-разному */
+const cfv=(k,v)=>v==null||v===''?'—':(k==='due'||k==='start'||k==='hold')?fmt(v):k==='status'?stName(v):k==='pct'?v+'%':(k==='spent'||k==='est')?v+' ч':String(v);
+function confView(){const L=(S.conf||[]).filter(c=>S.tasks.some(t=>t.id===c.tid));if(!L.length)return '';
+  return `<div class="warn" style="border:1px solid var(--org)"><b>Синхронизация: на устройствах было по-разному (${L.length})</b><div class="s">Для каждого поля автоматически выбрана версия с большим прогрессом или более поздняя. Если выбрано не то, нажмите «Взять другую».</div>${L.slice(0,8).map(c=>`<div style="margin:8px 0"><b>${esc(c.title.slice(0,80))}</b><div class="s">${esc(CFN[c.k]||c.k)}: здесь — ${esc(cfv(c.k,c.took==='theirs'?c.theirs:c.mine))}${c.took==='theirs'?' (взято с другого устройства)':''}; другая версия — ${esc(cfv(c.k,c.took==='theirs'?c.mine:c.theirs))}</div><div class="bar"><button data-act="cfok" data-cid="${c.id}">Оставить</button><button data-act="cfsw" data-cid="${c.id}">Взять другую</button></div></div>`).join('')}${L.length>8?`<div class="s">… и ещё ${L.length-8}</div>`:''}<div class="bar"><button data-act="cfall">Принять всё как есть</button></div></div>`;}
 function pendView(){
   if(!S.pend.length)return '';
   return `<div class="warn" style="border-color:var(--org)"><b>Изменения календарного плана ждут вашего решения (${S.pend.length})</b><div class="s">Утверждённые сроки сами не меняются. Решите по каждому изменению.</div>${S.pend.slice(0,12).map(c=>{const t=S.tasks.find(x=>x.id===c.tid);if(!t)return '';return `<div style="margin:8px 0"><b>${esc(t.title)}</b><div class="s">${c.f==='due'?'срок':'начало'}: ${c.from?fmt(c.from):'—'} → ${c.to?fmt(c.to):'—'}${c.f==='due'?' · влияние: '+esc(impactText(t,c.to)):''}</div><div class="bar"><button data-act="pendyes" data-id="${c.id}">Принять</button><button data-act="pendno" data-id="${c.id}">Оставить прежний</button></div></div>`;}).join('')}</div>`;}
@@ -885,7 +889,8 @@ function learnedView(){
   return h;}
 S.del=S.del||{};
 const COLS=['tasks','projects','templates','graphs','shop'];
-const clean=o=>{const c=Object.assign({},o);delete c.upd;delete c.cr;return JSON.stringify(c);};
+const clean=o=>{const c=Object.assign({},o);delete c.upd;delete c.cr;delete c.fu;return JSON.stringify(c);};
+const FUC=['tasks','projects']; // у задач и объектов время изменения хранится по каждому полю (fu), чтобы правки с разных устройств сливались по полям
 let SNAP={};COLS.forEach(c=>S[c].forEach(o=>{SNAP[o.id]=clean(o);}));
 const SNT={};S.tasks.forEach(t=>{SNT[t.id]=t.title;});
 function jval(k,v){if(v==null||v==='')return '—';if(k==='status')return stName(v);if(k==='project'){const p=S.projects.find(x=>x.id===v);return p?p.name:v;}if(k==='deps')return (v||[]).length+' шт.';return String(v);}
@@ -893,6 +898,9 @@ function stamp(){ // отметка времени изменения, «над�
   const now=Date.now(),seen={},jn=[],newT=[];
   COLS.forEach(c=>S[c].forEach(o=>{seen[o.id]=1;if(c==='tasks'&&!o.cr)o.cr=now;const j=clean(o);
     if(SNAP[o.id]!==j){
+      if(FUC.includes(c)){let a0=null;if(SNAP[o.id]!=null){try{a0=JSON.parse(SNAP[o.id]);}catch(e){}}
+        const fu=o.fu=o.fu||{},nz=v=>JSON.stringify(v===undefined?null:v);
+        new Set(Object.keys(o).concat(a0?Object.keys(a0):[])).forEach(k=>{if(k==='fu'||k==='upd'||k==='cr'||k==='id')return;if(!a0||nz(a0[k])!==nz(o[k]))fu[k]=now;});}
       if(c==='tasks'){
         if(SNAP[o.id]==null)newT.push(o);
         else{let a={};try{a=JSON.parse(SNAP[o.id]);}catch(e){}
@@ -909,16 +917,44 @@ function stamp(){ // отметка времени изменения, «над�
 }
 function save(){applyKB();stamp();try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('Не удалось сохранить данные');}try{sySoon();}catch(e){}try{lnSoon();}catch(e){}}
 const tkey=t=>[t.title,t.project,t.kind].map(x=>String(x||'').trim().toLowerCase()).join('|');
-function mergeData(d){
-  const r={add:0,upd:0,del:0},D=d.del||{};
+const MKEEP={id:1,fu:1,upd:1,cr:1},CFN={status:'статус',pct:'готовность',spent:'потрачено',due:'срок',start:'начало',title:'название',est:'оценка',hold:'отложено до'};
+const STRANK={cancel:0,todo:1,new:1,block:1,wait:1,review:2,doing:3,done:4};
+const jeq=(a,b)=>JSON.stringify(a===undefined?null:a)===JSON.stringify(b===undefined?null:b);
+/* слияние двух версий одной задачи/объекта по полям: у каждого поля своё время изменения.
+   Если поле менялось на обоих устройствах: статус — побеждает больший прогресс (выполнена > в работе > остальное), % и часы — большее значение, остальное — более позднее.
+   Такие случаи попадают в список конфликтов, чтобы вы могли выбрать другую версию. */
+function mergeObj(l,o,col,base,conf){
+  const hasL=!!l.fu&&Object.keys(l.fu).length>0,hasR=!!o.fu&&Object.keys(o.fu).length>0,lf=l.fu=l.fu||{},of=o.fu||{};
+  const tl=k=>lf[k]!=null?lf[k]:(hasL?0:(l.upd||0)),tr=k=>of[k]!=null?of[k]:(hasR?0:(o.upd||0));
+  const keys=[...new Set(Object.keys(l).concat(Object.keys(o)))].filter(k=>!MKEEP[k]);let ch=false,stR=null;
+  const apply=(k,takeR)=>{if(takeR){if(o[k]===undefined)delete l[k];else l[k]=JSON.parse(JSON.stringify(o[k]));lf[k]=tr(k)||lf[k]||0;ch=true;}};
+  const both=k=>base>0&&tl(k)>base&&tr(k)>base;
+  const note=(k,takeR)=>{if(conf&&col==='tasks'&&CFN[k])conf.push({id:uid(),tid:l.id,title:l.title||'',k,mine:l[k],theirs:o[k],took:takeR?'theirs':'mine',ts:Date.now()});};
+  if(!jeq(l.status,o.status)){let t=tr('status')>tl('status');
+    if(both('status')){const a=STRANK[l.status]!=null?STRANK[l.status]:1,b=STRANK[o.status]!=null?STRANK[o.status]:1;t=b>a?true:b<a?false:t;note('status',t);}
+    stR=t;apply('status',t);}
+  keys.forEach(k=>{if(k==='status'||jeq(l[k],o[k]))return;
+    let t=tr(k)>tl(k);
+    if(k==='doneAt'&&stR!==null)t=stR;
+    else if(both(k)&&(k==='pct'||k==='spent')){t=(+o[k]||0)>(+l[k]||0);note(k,t);}
+    else if(both(k)&&CFN[k])note(k,t);
+    apply(k,t);});
+  l.upd=Math.max(l.upd||0,o.upd||0);if(o.cr&&(!l.cr||o.cr<l.cr))l.cr=o.cr;
+  return ch;}
+function mergeData(d,base){
+  stamp(); // сначала фиксируем ещё не отмеченные локальные правки
+  const r={add:0,upd:0,del:0,conf:0},D=d.del||{},conf=[];base=base||0;
   const one=(col,keyf)=>{
     (d[col]||[]).forEach(o=>{
       let l=S[col].find(x=>x.id===o.id);
       if(!l&&keyf)l=S[col].find(x=>keyf(x)===keyf(o));
-      if(l){if((o.upd||0)>(l.upd||0)){const id=l.id;Object.keys(l).forEach(k=>delete l[k]);Object.assign(l,o,{id});r.upd++;}}
-      else if(!(S.del[o.id]&&S.del[o.id]>=(o.upd||0))){S[col].push(JSON.parse(JSON.stringify(o)));r.add++;}
+      if(l){
+        if(FUC.includes(col)){if(mergeObj(l,o,col,base,conf))r.upd++;}
+        else if((o.upd||0)>(l.upd||0)){const id=l.id;Object.keys(l).forEach(k=>delete l[k]);Object.assign(l,o,{id});r.upd++;}
+        SNAP[l.id]=clean(l);if(col==='tasks')SNT[l.id]=l.title;} // принятое из облака не считается новой правкой на этом устройстве
+      else if(!(S.del[o.id]&&S.del[o.id]>=(o.upd||0))){const c=JSON.parse(JSON.stringify(o));S[col].push(c);SNAP[c.id]=clean(c);if(col==='tasks')SNT[c.id]=c.title;r.add++;}
     });
-    Object.keys(D).forEach(id=>{const i=S[col].findIndex(x=>x.id===id);if(i>=0&&D[id]>(S[col][i].upd||0)){S[col].splice(i,1);r.del++;}});
+    Object.keys(D).forEach(id=>{const i=S[col].findIndex(x=>x.id===id);if(i>=0&&D[id]>(S[col][i].upd||0)){S[col].splice(i,1);delete SNAP[id];delete SNT[id];r.del++;}});
   };
   one('projects',p=>String(p.name||'').trim().toLowerCase());one('tasks',tkey);one('templates',null);one('shop',null);one('graphs',null);
   Object.keys(D).forEach(id=>{if(!S.del[id]||S.del[id]<D[id])S.del[id]=D[id];});
@@ -929,13 +965,14 @@ function mergeData(d){
   S.settings.lead=Object.assign({},(d.settings&&d.settings.lead)||{},S.settings.lead||{});pfit();
   const ids=new Set(S.projects.map(p=>p.id));S.tasks.forEach(t=>{if(t.project&&!ids.has(t.project))t.project='';});
   S.settings.nextNo=Math.max(+S.settings.nextNo||1,+(d.settings&&d.settings.nextNo)||1);
+  if(conf.length){S.conf=(S.conf||[]).filter(x=>!conf.some(c=>c.tid===x.tid&&c.k===x.k)).concat(conf).slice(-60);r.conf=conf.length;}
   stamp();save();return r;
 }
 
 /* ---------- СИНХРОНИЗАЦИЯ: личный приватный репозиторий GitHub, данные шифруются на устройстве (AES-GCM, ключ из парольной фразы) ---------- */
 const SYK='gip_sync_v1',SYF='planner-data.enc.json';
 let SY=(()=>{try{return JSON.parse(localStorage.getItem(SYK))||{};}catch(e){return {};}})();
-let SYB=false,SYT=null,SYKC={};
+let SYB=false,SYT=null,SYKC={},SYSALT=null,SYD=false,SYM=false;
 const syCfg=()=>!!(SY.repo&&SY.token&&SY.pass);
 function sySave(){try{localStorage.setItem(SYK,JSON.stringify(SY));}catch(e){}}
 const syB64=u=>{let t='';for(let i=0;i<u.length;i+=0x8000)t+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(t);};
@@ -943,15 +980,19 @@ const syUn=b=>Uint8Array.from(atob(b),c=>c.charCodeAt(0));
 async function syKey(pass,salt,it){const k=pass+'|'+syB64(salt)+'|'+it;if(SYKC[k])return SYKC[k];
   const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
   return SYKC[k]=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:it,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);}
-async function syEnc(text,pass){const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12)),it=250000,key=await syKey(pass,salt,it);
+async function syEnc(text,pass){const salt=SYSALT?syUn(SYSALT.salt):crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12)),it=SYSALT?SYSALT.it:250000,key=await syKey(pass,salt,it);
+  if(!SYSALT)SYSALT={salt:syB64(salt),it};
   const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(text)));
   return JSON.stringify({app:'gip-planner',v:1,kdf:'PBKDF2-SHA256',it,salt:syB64(salt),iv:syB64(iv),ct:syB64(ct)});}
 async function syDec(file,pass){let f;try{f=JSON.parse(file);}catch(e){throw new Error('Файл в репозитории повреждён');}
   if(!f||f.app!=='gip-planner'||!f.ct)throw new Error('В репозитории лежит чужой файл '+SYF);
   try{const key=await syKey(pass,syUn(f.salt),f.it||250000);
-    return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:syUn(f.iv)},key,syUn(f.ct)));}
+    const out=new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:syUn(f.iv)},key,syUn(f.ct)));SYSALT={salt:f.salt,it:f.it||250000};return out;}
   catch(e){throw new Error('Неверная парольная фраза (или файл повреждён)');}}
 async function syHash(t){const h=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)));return Array.from(h.slice(0,8)).map(x=>x.toString(16).padStart(2,'0')).join('');}
+/* сравнение без учёта порядка: чтобы устройства не перезаписывали друг за другом одинаковые данные */
+function syStable(v){if(Array.isArray(v))return '['+v.map(syStable).join(',')+']';if(v&&typeof v==='object')return '{'+Object.keys(v).sort().filter(k=>v[k]!==undefined).map(k=>JSON.stringify(k)+':'+syStable(v[k])).join(',')+'}';return JSON.stringify(v);}
+function syNorm(text){let d;try{d=JSON.parse(text);}catch(e){return String(text);}['tasks','projects','templates','graphs','shop'].forEach(c=>{if(Array.isArray(d[c]))d[c]=d[c].slice().sort((a,b)=>String(a.id)<String(b.id)?-1:1);});return syStable(d);}
 const syPayload=()=>JSON.stringify({tasks:S.tasks,projects:S.projects,templates:S.templates,graphs:S.graphs,shop:S.shop,del:S.del,learn:{samples:S.learn.samples,ev:S.learn.ev,iq:S.learn.iq||[]},kb:S.kb,settings:{lead:S.settings.lead,nextNo:S.settings.nextNo}});
 async function syGh(method,body,raw){
   const url='https://api.github.com/repos/'+SY.repo+'/contents/'+SYF+(method==='GET'&&SY.branch?'?ref='+encodeURIComponent(SY.branch):'');
@@ -966,7 +1007,7 @@ function syErr(r){const c=r.status;
 async function syRun(manual,depth){
   if(!syCfg()||SYB)return null;if(!manual&&!SY.auto)return null;
   if(!manual&&navigator.onLine===false)return null;
-  SYB=true;let res={ok:false};
+  SYB=true;let res={ok:false};const t00=Date.now();syStat('busy');
   try{
     let r=await syGh('GET'),remote=null,sha=null;
     if(r.status===404){remote=null;}
@@ -976,23 +1017,27 @@ async function syRun(manual,depth){
       remote=await syDec(txt,SY.pass);}
     else throw new Error(syErr(r));
     let merged=null;
-    if(remote){const d=JSON.parse(remote);merged=mergeData(d);}
-    const pay=syPayload(),h=await syHash(pay),need=!remote||sha!==SY.sha||h!==SY.hash;
+    if(remote){const d=JSON.parse(remote);SYM=true;try{merged=mergeData(d,SY.base||0);}finally{SYM=false;}}
+    const pay=syPayload(),h=await syHash(pay),need=!remote||(h!==SY.hash&&syNorm(pay)!==syNorm(remote));
     if(need){
       const body={message:'sync '+new Date().toISOString(),content:syB64(new TextEncoder().encode(await syEnc(pay,SY.pass)))};
       if(sha)body.sha=sha;if(SY.branch)body.branch=SY.branch;
       const pr=await syGh('PUT',body);
-      if(pr.status===409||pr.status===422){SYB=false;if((depth||0)<2)return await syRun(manual,(depth||0)+1);throw new Error('Не удалось записать: данные в облаке меняются одновременно. Повторите позже.');}
+      if(pr.status===409||pr.status===422){SYB=false;if((depth||0)<3)return await syRun(manual,(depth||0)+1);throw new Error('Не удалось записать: данные в облаке меняются одновременно. Повторите позже.');}
       if(!(pr.status===200||pr.status===201))throw new Error(syErr(pr));
       const pj=await pr.json();SY.sha=pj.content&&pj.content.sha||null;SY.hash=h;}
     else{SY.sha=sha;SY.hash=h;}
-    SY.last=Date.now();SY.err='';sySave();res={ok:true,merged,uploaded:need};
+    SY.last=Date.now();SY.base=t00;SY.err='';sySave();res={ok:true,merged,uploaded:need};
   }catch(e){SY.err=e.message||String(e);sySave();res={ok:false,err:SY.err};}
-  finally{SYB=false;}
-  if(res.ok&&res.merged&&(res.merged.add+res.merged.upd+res.merged.del)>0){try{if(!dlg.open)render();}catch(e){}}
+  finally{SYB=false;syStat();if(SYD){SYD=false;if(res.ok)sySoon(300);}}
+  if(res.ok&&res.merged&&(res.merged.add+res.merged.upd+res.merged.del)>0){try{if(!dlg.open)render();if(res.merged.conf)toast('Синхронизация: есть расхождения между устройствами ('+res.merged.conf+'), см. экран «Сегодня»');}catch(e){}}
   else try{if(tab==='setup'&&!dlg.open)render();}catch(e){}
   return res;}
-function sySoon(){if(!syCfg()||!SY.auto||SYB)return;clearTimeout(SYT);SYT=setTimeout(()=>{syRun(false);},20000);}
+/* отправка почти сразу после любой правки; если в этот момент идёт обмен, правка не теряется: после него запускается ещё один */
+function sySoon(ms){if(!syCfg()||!SY.auto||SYM)return;if(SYB){SYD=true;return;}clearTimeout(SYT);SYT=setTimeout(()=>{syRun(false);},ms==null?1500:ms);syStat('wait');}
+function syStat(m){const e=document.getElementById('syst');if(!e)return;if(!syCfg()){e.textContent='';return;}
+  e.textContent=m==='busy'?'☁ синхронизация…':m==='wait'?'☁ ждёт отправки…':SY.err?'⚠ синхронизация: ошибка':'☁ '+syAgo(SY.last);
+  e.style.color=SY.err&&m!=='busy'&&m!=='wait'?'#ffd7a3':'';}
 function syAgo(t){if(!t)return 'ещё не выполнялась';const m=Math.round((Date.now()-t)/60000);return m<1?'только что':m<60?m+' мин. назад':new Date(t).toLocaleString('ru-RU');}
 function syView(){
   const on=syCfg();
@@ -1000,7 +1045,7 @@ function syView(){
   if(on){
     h+=`<div class="card" style="display:block"><div class="s">Репозиторий: <b>${esc(SY.repo)}</b> · последняя синхронизация: ${syAgo(SY.last)}</div>
     ${SY.err?`<div class="warn">${esc(SY.err)}</div>`:'<div class="s" style="color:var(--grn)">Данные в облаке зашифрованы на этом устройстве.</div>'}
-    <label class="cr" style="border:0"><input type="checkbox" data-act="syauto" ${SY.auto?'checked':''}><span>Автоматически: при запуске, при открытии приложения, через 20 сек. после изменений и раз в 5 минут</span></label>
+    <label class="cr" style="border:0"><input type="checkbox" data-act="syauto" ${SY.auto?'checked':''}><span>Автоматически: сразу после каждого изменения (через 1–2 сек.), при запуске, при открытии приложения и раз в минуту</span></label>
     <div class="bar"><button class="pri" data-act="synow">Синхронизировать сейчас</button><button class="dng" data-act="sydis">Отключить на этом устройстве</button></div>
     <div class="s">Отключение удаляет токен и парольную фразу с этого устройства. Данные и облачная копия остаются.</div></div>`;
   }else{
@@ -1024,6 +1069,12 @@ let ui={po:'',fp:'',fs:'open',fk:'',reserve:false,mode:S.tasks.some(t=>t.type)?'
 const isHome=t=>t.kind==='home';
 const rem=t=>{const e0=+t.est>0?+t.est:(isHome(t)?0.5:1),e=e0*lk(t,e0);return Math.max(0,Math.round((e-(+t.spent||0))*100)/100);};
 const nowMin=()=>{const n=new Date();return n.getHours()*60+n.getMinutes();};
+/* нерабочее время: выходной, раньше первого или позже последнего блока расписания дня */
+function offHours(){
+  if(isWkEnd(today()))return true;
+  const B=parseBlocks(S.settings.blocks);if(!B.length)return false;
+  const a=Math.min.apply(null,B.map(b=>b.from)),z=Math.max.apply(null,B.map(b=>b.to)),n=nowMin();
+  return n<a||n>=z;}
 function dayLog(d){d=d||today();const L=S.log[d]||(S.log[d]={lost:0,hits:0,fired:{},alerts:[],plan0:null});return L;}
 const allTypes=()=>{const s=new Set(DEF_TYPES);S.tasks.forEach(t=>{if(t.type)s.add(t.type);});return [...s];};
 const REPEAT={d:'каждый день',wd:'по рабочим дням (пн–пт)',x:'по выбранным дням',w:'каждую неделю',m:'каждый месяц'};
@@ -1530,6 +1581,7 @@ function vToday(){
   if(!S.tasks.length)return h+`<div class="empty">Задач пока нет.<br>Импортируйте календарный план из Excel (вкладка «План»), добавьте рабочую задачу или бытовую ниже.<br><br><button data-act="demo">Загрузить демо-данные</button></div>`+(STAGE>=2?`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить ОВ по объекту А до среды, два часа»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form><div class="bar"><button data-act="chat">💬 Помощник</button></div>`:'')+homeSection();
   let head0=h;h='';
   if(P.overH>P.cap)h+=`<div class="warn">Просрочено ${P.overN} задач (≈${P.overH} ч) — это около ${Math.ceil(P.overH/P.cap)} рабочих дней при ${P.cap} ч в день, если новых задач не появится. Часть стоит удалить, делегировать или согласовать перенос.</div>`;
+  head0+=confView();
   if(syCfg())head0+=`<div class="bar" style="align-items:center"><button class="pri" data-act="synow">⟳ Синхронизировать</button><span class="s" style="margin:0">${SY.err?'<span style="color:var(--red)">ошибка: '+esc(SY.err.slice(0,70))+'</span>':'☁ '+syAgo(SY.last)}</span></div>`;
   h+=`<div class="bar"><button data-act="replan">⟳ Пересчитать план</button>${STAGE>=2?'<button data-act="chat">💬 Помощник</button>':''}${cl0.length?'':'<button data-act="newcall">+ Звонок</button>'}</div>`;
   if(STAGE>=2)h+=`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить замечания по разделу ОВ для объекта А до среды, примерно два часа, после получения обновлённой схемы»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form>`;
@@ -1571,7 +1623,7 @@ function vToday(){
   if(pp.length)h+=`<details style="margin-top:8px"><summary>⏳ Отложено сегодня (${pp.length})</summary>${pp.map(t=>`<div class="cr"><span class="grow s">${esc(t.title)} — до ${fmt(t.hold)}${t.due&&t.due<=t0?' <span class="b red">срок '+(t.due<t0?'прошёл':'сегодня')+'</span>':''}</span><button data-act="tunhold" data-id="${t.id}">Вернуть</button></div>`).join('')}</details>`;
   if(weekend)return head0+`<div class="warn">Сегодня выходной: показаны только бытовые дела. Рабочее свёрнуто ниже.</div>`+homeSection()+`<div class="bar"><button data-tab="buy">🛒 Список покупок${S.shop.filter(i=>!i.done).length?' ('+S.shop.filter(i=>!i.done).length+')':''}</button></div><details style="margin-top:10px"><summary>💼 Рабочее на сегодня (звонки, сигналы, план)</summary>${h}</details>`;
   const hn=planDay('home').day.length;
-  return head0+h+`<details style="margin-top:10px"><summary><b>🏠 Дом</b> · на сегодня: ${hn}</summary>${homeSection()}</details>`;
+  return head0+h+`<details style="margin-top:10px" ${offHours()?'open':''}><summary><b>🏠 Дом</b> · на сегодня: ${hn}</summary>${homeSection()}</details>`;
 }
 function vPlan(){
   const t0=today();
@@ -1720,7 +1772,7 @@ function grCol(G,tok){
 function grMake(code,mode){
   const parts=['МТО','СТРО','ГП','ОВ','ВК','ЭО','КИП','СВ','ПТ','ОМК','СМО','ПОС'];
   const G={id:uid(),mode:mode||'gtp',code:code||'',created:today(),upd:Date.now(),project:ui.fp||'',pt:true,parts,prio:'reg',show:'d',opt:{arch:false,kns:false,street:false},regOff:{},
-    hdr:{no:'',cipher:'',plant:'',name:'',stage:'',leader:'МТО',start:today(),otr:'',approve:'',send:'',gip:S.settings.signer||'',zam:'',pe:'',disp:'',org:S.settings.company||'ОАО «ГИАП», г. Гродно',cap:''},items:[],notes:[],refs:[]};
+    hdr:{no:'',cipher:'',plant:'',name:(proj(ui.fp)||{}).name||'',nameAuto:proj(ui.fp)?1:0,stage:'',leader:'МТО',start:today(),end:'',otr:'',approve:'',send:'',gip:S.settings.signer||'',zam:'',pe:'',disp:'',org:S.settings.company||'ОАО «ГИАП», г. Гродно',cap:''},items:[],notes:[],refs:[]};
   if(G.mode==='reg'){G.hdr.stage='АС';G.items=GREG.map((r,ix)=>({f:[r[0]],t:[r[1]],day:r[2],mk:'',forms:'',text:r[3],inc:true,rid:ix,sub:typeof r[4]==='number'?r[4]:null,row:typeof r[4]==='string'?r[4]:null}));grParts(G);}
   else{const g=GTP.find(x=>x.c===String(code));if(g){G.hdr.stage=g.s;G.title=g.t;G.notes=g.n.slice();G.refs=g.r.slice();G.items=g.i.map(r=>({f:r[0].slice(),t:r[1].slice(),day:r[2],mk:r[3],forms:r[4],text:r[5],inc:true,sub:null,row:null}));G.opt.arch=G.items.some(i=>/промежуточн\w*\s+архитектур/i.test(i.text||''));
     const tt=g.t||'';G.hdr.leader=/межцех/i.test(tt)?'ОМК':/электрическ/i.test(tt)?'ЭО':/административн/i.test(tt)?'СТРО':/водопровод/i.test(tt)?'ВК':/пожаротуш/i.test(tt)?'ПТ':'МТО';grRegDefault(G);}}
@@ -1789,7 +1841,7 @@ function grHtml(G,doc){
       if(hasCell||!txt)h+=`<tr><td class="l"><b>${txt?'ГИП (по отделам)':'ГИП'}</b></td>${cols.map(c=>`<td>${grCellLines(G,mx,'ГИП|'+c.k).join('<br>')}</td>`).join('')}</tr>`;
       return;}
     h+=`<tr style="height:${['ГП','ГП вер.пл.','СМО','ОП, ОТ','ТЭО','ТИ','КО','ПОС','ОМК'].includes(r)?'15':'26'}px"><td class="l"><b>${esc(r)}</b></td>${cols.map(c=>`<td>${grCellLines(G,mx,r+'|'+c.k).join('<br>')}</td>`).join('')}</tr>`;});
-  h+=`</table><table class="nb" style="width:100%;margin-top:8px"><tr><td class="l" style="font-size:9pt">Зам. директора по проектированию ${esc(H.zam||'')}<br>ГИП ${esc(H.gip||'')}<br>Нач. ПЭО ${esc(H.pe||'')}<br>Диспетчер ${esc(H.disp||'')}</td><td class="l" style="font-size:9pt;vertical-align:top;width:35%">Отправка – ${esc(H.send?fmt(H.send):'________________')}<br><span class="sm">Условный день 1 = ${esc(fmt(grDate(H.start,1,mx.cal)))}</span></td></tr></table>`;
+  h+=`</table><table class="nb" style="width:100%;margin-top:8px"><tr><td class="l" style="font-size:9pt">Зам. директора по проектированию ${esc(H.zam||'')}<br>ГИП ${esc(H.gip||'')}<br>Нач. ПЭО ${esc(H.pe||'')}<br>Диспетчер ${esc(H.disp||'')}</td><td class="l" style="font-size:9pt;vertical-align:top;width:35%">Отправка – ${esc(H.send?fmt(H.send):'________________')}${H.end?'<br>Срок завершения – '+esc(fmt(H.end)):''}<br><span class="sm">Условный день 1 = ${esc(fmt(grDate(H.start,1,mx.cal)))}</span></td></tr></table>`;
   if(mx.ex.length)h+=`<p class="sm" style="margin-top:6px"><b>Задания вне формы:</b> `+mx.ex.map(x=>esc(grDM(x.d)+' '+x.from+' → '+x.to+' ('+(x.text||'').slice(0,50)+'; '+x.why+')')).join('; ')+'</p>';
   // приложение: расшифровка заданий
   const L=G.items.filter(i=>i.inc).map(i=>({i,d:grDate(H.start,+i.day,mx.cal)})).sort((a,b)=>+a.i.day-+b.i.day||(a.i.f.join()<b.i.f.join()?-1:1));
@@ -1803,16 +1855,31 @@ function grHtml(G,doc){
 const grFix2=s=>String(s||'');
 function grName(G){return ('График '+(G.hdr.no||'')+' '+(G.hdr.cipher||'')).trim().replace(/[\\/:*?"<>|]/g,'')||'График';}
 function grCsv(G){const cal=grCal();return csvText([['У.д.','Дата','От кого','Кому','Формы','Содержание']].concat(G.items.filter(i=>i.inc).map(i=>[i.day,fmt(grDate(G.hdr.start,+i.day,cal)),i.f.join(', '),i.t.join(', '),i.forms,i.text])));}
-function grSave(G){G.upd=Date.now();const i=S.graphs.findIndex(x=>x.id===G.id);if(i>=0)S.graphs[i]=G;else S.graphs.push(G);save();}
+function grMaxDay(G){return G.items.filter(i=>i.inc).reduce((m,i)=>Math.max(m,+i.day||0),0);}
+function grEndCalc(G){const m=grMaxDay(G);return m>0?grDate(G.hdr.start,m,grCal()):'';}
+function grBack(end,n,c){let d=end;for(let i=0;i<40&&!grIsW(d,c);i++)d=addDays(d,-1);for(let i=1;i<n;i++){d=addDays(d,-1);for(let k=0;k<40&&!grIsW(d,c);k++)d=addDays(d,-1);}return d;}
+function grEndInfo(G){const H=G.hdr,ce=grEndCalc(G);if(!ce)return '';
+  let h=`Расчётное завершение (последнее задание, у.д. ${grMaxDay(G)}): <b>${fmt(ce)}</b>.`;
+  if(H.end){const d=diff(ce,H.end);
+    if(d>0)h+=` <b style="color:var(--red)">Позже заданного срока на ${d} дн.</b> <button type="button" data-gact="fitend">Сдвинуть день 1 под срок</button>`;
+    else if(d<0)h+=` Укладывается в срок, запас ${-d} дн.`;
+    else h+=' Совпадает со сроком завершения.';
+    if(d!==0&&d<0)h+=` <button type="button" data-gact="fitend">Сдвинуть день 1 вплотную к сроку</button>`;}
+  return h;}
+function grSave(G){delete G.dirty;G.upd=Date.now();const i=S.graphs.findIndex(x=>x.id===G.id);if(i>=0)S.graphs[i]=G;else S.graphs.push(G);save();}
 function grTasks(G){const cal=grCal();let n=0;
   G.items.filter(i=>i.inc&&i.f.includes('ГИП')).forEach(i=>{const d=grDate(G.hdr.start,+i.day,cal),ttl='График '+(G.hdr.no||G.code)+(G.hdr.cipher?' ('+G.hdr.cipher+')':'')+': '+(i.text||'выдача').slice(0,90)+' → '+i.t.map(t=>({ВСЕМ:'всем отделам',ГЛИНЖ:'главному инженеру'}[t]||t)).join(', ');
     if(S.tasks.some(t=>t.title===ttl&&t.project===G.project))return;
     S.tasks.push({id:uid(),title:ttl,kind:'work',type:'График',project:G.project,start:'',due:d,imp:3,est:0.5,status:'todo',resp:'',note:'Создано из графика выдачи заданий (условный день '+i.day+').',repeat:'',src:'график выдачи заданий'});n++;});
+  if(G.hdr.end){const ttl='График '+(G.hdr.no||G.code)+(G.hdr.cipher?' ('+G.hdr.cipher+')':'')+': срок завершения графика';
+    const ex=S.tasks.find(t=>t.title===ttl&&t.project===G.project);
+    if(ex){if(ex.due!==G.hdr.end&&isOpen(ex)){ex.due=G.hdr.end;n++;}}
+    else{S.tasks.push({id:uid(),title:ttl,kind:'work',ent:'milestone',type:'График',project:G.project,start:'',due:G.hdr.end,imp:3,est:0,status:'todo',resp:'',note:'Контрольный срок завершения графика выдачи заданий.',repeat:'',src:'график выдачи заданий'});n++;}}
   if(n)save();return n;}
 function grList(){
   const L=S.graphs.slice().sort((a,b)=>b.upd-a.upd);
   return `<h2>📅 Графики выдачи заданий</h2><div class="s">100-дневные графики по типовым ГТП и регламенту, форма «График №». Условные дни пересчитываются в даты по рабочим дням.</div>`+
-  (L.length?L.map(G=>`<div class="card"><div class="grow" data-gact="open" data-id="${G.id}"><div class="t">№ ${esc(G.hdr.no||'—')} · ${esc(G.hdr.cipher||'без шифра')}</div><div class="s">${G.mode==='reg'?'По регламенту':'ГТП-'+esc(G.code)+'-06'} · стадия «${esc(G.hdr.stage)}» · день 1: ${fmt(G.hdr.start)}${G.hdr.name?' · '+esc(G.hdr.name):''}</div></div></div>`).join(''):'')+
+  (L.length?L.map(G=>`<div class="card"><div class="grow" data-gact="open" data-id="${G.id}"><div class="t">№ ${esc(G.hdr.no||'—')} · ${esc(G.hdr.name||G.hdr.cipher||'без названия')}${G.hdr.name&&G.hdr.cipher?' · '+esc(G.hdr.cipher):''}</div><div class="s">${G.mode==='reg'?'По регламенту':'ГТП-'+esc(G.code)+'-06'} · стадия «${esc(G.hdr.stage)}» · день 1: ${fmt(G.hdr.start)}${G.hdr.end?' · срок завершения: '+fmt(G.hdr.end):''}</div></div></div>`).join(''):'')+
   `<div class="bar"><button class="pri" data-gact="new">+ Составить график</button></div>`;}
 function grItemRow(G,it,ix,cal){const d=grDate(G.hdr.start,+it.day,cal),toS=it.t.map(t=>({ВСЕМ:'всем',ВЕД:'ведущему',ГЛИНЖ:'гл. инж.','*':'отделам'}[t]||t.replace('@',' ('))+(t.includes('@')?')':'')).join(', '),frS=it.f.map(t=>t==='*'?'все':t==='ВЕД'?'ведущий':t).join(', ');
   const hasStro=it.t.includes('СТРО');
@@ -1825,10 +1892,11 @@ function vGraph(){
   <div class="g2">${f('no','№ графика')}${f('cipher','Шифр')}${f('plant','Завод')}${f('name','Название объекта')}</div>
   <div class="g2"><div><label class="f">Стадия</label><select data-gset="h.stage">${['А','АС','С'].map(s=>`<option ${H.stage===s?'selected':''}>${s}</option>`).join('')}</select></div>
   <div><label class="f">Ведущий отдел</label><select data-gset="h.leader">${GR_LEAD.map(s=>`<option ${H.leader===s?'selected':''}>${s}</option>`).join('')}</select></div>
-  ${f('start','День 1 (начало работы)','date')}${f('otr','ОТР согласованы','date')}${f('approve','Дата утверждения','date')}${f('send','Отправка','date')}
+  ${f('start','День 1 (начало работы)','date')}${f('end','Срок завершения графика','date')}${f('otr','ОТР согласованы','date')}${f('approve','Дата утверждения','date')}${f('send','Отправка','date')}
   ${f('gip','ГИП (ФИО)')}${f('zam','Зам. директора по проектированию (ФИО)')}${f('pe','Нач. ПЭО (ФИО)')}${f('disp','Диспетчер (ФИО)')}
   <div><label class="f">Организация</label><input type="text" data-gset="h.org" value="${esc(H.org||'')}"></div>
   <div><label class="f">Объект (в планнере)</label><select data-gset="project"><option value="">—</option>${S.projects.map(p=>`<option value="${p.id}" ${G.project===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div></div>
+  <div class="s" id="grend" style="margin:6px 0">${grEndInfo(G)}</div>
   <label class="cr"><input type="checkbox" data-gset="pt" ${G.pt?'checked':''}><span>Колонка «ПТ» (в бланке её нет, но задания на пожаротушение есть в графиках)</span></label>
   <div class="g2"><div><label class="f">Что показывать в ячейках</label><select data-gset="show">${[['d','Даты'],['u','Условные дни'],['du','Дата и условный день']].map(o=>`<option value="${o[0]}" ${(G.show||'d')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
   ${G.mode==='gtp'?`<div><label class="f">Сроки заданий</label><select data-gset="prio"><option value="reg" ${G.prio!=='gtp'?'selected':''}>По регламенту (где он их устанавливает)</option><option value="gtp" ${G.prio==='gtp'?'selected':''}>По типовому графику</option></select></div>`:''}</div>
@@ -1848,7 +1916,7 @@ function vGraph(){
   <div class="bar"><button data-gact="save">Сохранить</button><button class="pri" data-gact="doc">Скачать Word (.docx)</button><button data-gact="tasks">Задачи ГИПа по графику</button>${S.graphs.some(x=>x.id===G.id)?'<button class="dng" data-gact="del">Удалить</button>':''}</div>
   <h2>Предпросмотр</h2><div id="grprev" style="overflow-x:auto;background:#fff;color:#000;padding:6px;border-radius:6px;min-width:0">${grHtml(G,false)}</div>`;
   return h;}
-function grRefresh(){const G=ui.gr;if(!G)return;const p=$('#grprev');if(p)p.innerHTML=grHtml(G,false);const cal=grCal();G.items.forEach((it,ix)=>{const e=$('#grd'+ix);if(e)e.textContent=grDM(grDate(G.hdr.start,+it.day,cal));});}
+function grRefresh(){const G=ui.gr;if(!G)return;const p=$('#grprev');if(p)p.innerHTML=grHtml(G,false);const ge=$('#grend');if(ge)ge.innerHTML=grEndInfo(G);const cal=grCal();G.items.forEach((it,ix)=>{const e=$('#grd'+ix);if(e)e.textContent=grDM(grDate(G.hdr.start,+it.day,cal));});}
 async function grDocx(G){
   if(typeof JSZip==='undefined')throw new Error('JSZip отсутствует');
   const H=G.hdr,mx=grMatrix(G),cols=grColList(G),nC=cols.length;
@@ -1894,7 +1962,7 @@ async function grDocx(G){
   b+=tbl(grid,rows);
   if(mx.ex.length)b+=par('Задания вне формы: '+mx.ex.map(x=>grDM(x.d)+' '+x.from+' → '+x.to+' ('+(x.text||'').slice(0,50)+'; '+x.why+')').join('; '),{sz:13,after:60});
   b+=par('',{after:120});
-  b+=tbl([7000,3772],[tr([tc(['Зам. директора по проектированию '+(H.zam||''),'ГИП '+(H.gip||''),'Нач. ПЭО '+(H.pe||''),'Диспетчер '+(H.disp||'')],{w:7000,nb:1,sz:18}),tc(['Отправка – '+(H.send?fmt(H.send):'________________'),'Условный день 1 = '+fmt(grDate(H.start,1,mx.cal))],{w:3772,nb:1,sz:16})])],1);
+  b+=tbl([7000,3772],[tr([tc(['Зам. директора по проектированию '+(H.zam||''),'ГИП '+(H.gip||''),'Нач. ПЭО '+(H.pe||''),'Диспетчер '+(H.disp||'')],{w:7000,nb:1,sz:18}),tc(['Отправка – '+(H.send?fmt(H.send):'________________')].concat(H.end?['Срок завершения – '+fmt(H.end)]:[],['Условный день 1 = '+fmt(grDate(H.start,1,mx.cal))]),{w:3772,nb:1,sz:16})])],1);
   b+=par(G.mode==='reg'?'Составлено по регламенту выдачи проектной документации (100-дневный график). Условные дни считаются в рабочих днях.':G.prio==='gtp'?'Сроки по типовому графику ГТП-'+G.code+'-06. Условные дни считаются в рабочих днях.':'Состав заданий по типовому графику ГТП-'+G.code+'-06, сроки по регламенту выдачи проектной документации (100-дневный график) там, где регламент их устанавливает. Условные дни считаются в рабочих днях.',{sz:13,after:0});
   // перечень заданий
   b+='<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
@@ -1925,20 +1993,25 @@ document.addEventListener('click',e=>{
   if(a==='new'){const o=GTP.map(g=>`<option value="${g.c}">ГТП-${g.c}-06 · «${g.s}» · ${esc(g.t.replace('Типовой график разработки проектной документации','').trim().slice(0,70))}</option>`).join('');
     dlg.onchange=null;dlg.onclose=null;dlg.innerHTML=`<form method="dialog"><h3>Новый график выдачи заданий</h3><label class="f">Основа</label><select id="grsrc">${o}<option value="reg">Регламент выдачи ПД (универсальный 100-дневный)</option></select><div class="s">ГТП-1 и ГТП-2 (подготовка объекта к проектированию) в присланных файлах отсутствуют.</div><div class="row"><button value="cancel">Отмена</button><button class="pri" value="ok" id="grgo">Создать</button></div></form>`;
     dlg.returnValue='';
-    $('#grgo').onclick=ev=>{const v=$('#grsrc').value;ui.gr=v==='reg'?grMake('', 'reg'):grMake(v,'gtp');dlg.close();render();window.scrollTo(0,0);};dlg.showModal();return;}
+    $('#grgo').onclick=ev=>{const v=$('#grsrc').value;ui.gr=v==='reg'?grMake('', 'reg'):grMake(v,'gtp');ui.grDirty=0;dlg.close();render();window.scrollTo(0,0);};dlg.showModal();return;}
   if(a==='newfor'){ui.fp=b.dataset.id;tab='docs';ui.gnew=1;render();window.scrollTo(0,0);setTimeout(()=>{const nb=document.querySelector('[data-gact=new]');if(nb)nb.click();},30);return;}
-  if(a==='open'){const G=S.graphs.find(x=>x.id===b.dataset.id);if(G){ui.gr=JSON.parse(JSON.stringify(G));render();window.scrollTo(0,0);}return;}
+  if(a==='open'){const G=S.graphs.find(x=>x.id===b.dataset.id);if(G){ui.gr=JSON.parse(JSON.stringify(G));ui.grDirty=0;render();window.scrollTo(0,0);}return;}
   const G=ui.gr;if(!G)return;
-  if(a==='back'){ui.gr=null;render();}
-  else if(a==='save'){grSave(G);toast('График сохранён');render();}
+  if(a==='back'){if(ui.grDirty&&!S.graphs.some(x=>x.id===G.id))grSave(G);ui.grDirty=0;ui.gr=null;render();}
+  else if(a==='fitend'){const m=grMaxDay(G);if(G.hdr.end&&m>0){G.hdr.start=grBack(G.hdr.end,m,grCal());ui.grDirty=1;if(S.graphs.some(x=>x.id===G.id))grSave(G);render();toast('День 1 = '+fmt(G.hdr.start)+': последнее задание выпадает на '+fmt(G.hdr.end));}else toast('Укажите срок завершения графика');}
+  else if(a==='save'){grSave(G);ui.grDirty=0;toast('График сохранён');render();}
   else if(a==='print')grPrint(G);
   else if(a==='doc'){grDocx(G).then(bl=>{download(bl,grName(G)+'.docx');toast('Файл Word сохранён');}).catch(err=>{console.error(err);toast('Не удалось собрать файл Word');});}
   else if(a==='csv')download(new Blob([grCsv(G)],{type:'text/csv'}),grName(G)+'.csv');
   else if(a==='tasks'){grSave(G);const n=grTasks(G);render();toast(n?'Создано задач ГИПа: '+n:'Новых задач нет (они уже созданы или нет заданий от ГИП)');}
   else if(a==='del'){if(confirm('Удалить график?')){S.graphs=S.graphs.filter(x=>x.id!==G.id);S.del[G.id]=Date.now();ui.gr=null;save();render();}}
 });
+document.addEventListener('input',e=>{ // текст шапки графика запоминается сразу при вводе, не только после ухода из поля
+  const el=e.target,k=el.dataset&&el.dataset.gset;if(!k||!ui.gr||!k.startsWith('h.')||el.type!=='text')return;
+  ui.gr.hdr[k.slice(2)]=el.value;if(k==='h.name')ui.gr.hdr.nameAuto=0;ui.grDirty=1;});
 document.addEventListener('change',e=>{
   const el=e.target,k=el.dataset&&el.dataset.gset;if(!k||!ui.gr)return;const G=ui.gr,ix=+el.dataset.ix;
+  if(!k.startsWith('s.')){ui.grDirty=1;queueMicrotask(()=>{if(ui.gr===G&&S.graphs.some(x=>x.id===G.id))grSave(G);});} // правки графика сохраняются сразу
   if(k==='inc'){G.items[ix].inc=el.checked;}
   else if(k==='day'){G.items[ix].day=Math.max(0,+el.value||0);}
   else if(k==='sub'){G.items[ix].sub=el.value?+el.value:null;}
@@ -1947,9 +2020,9 @@ document.addEventListener('change',e=>{
   else if(k==='prio'){G.prio=el.value;render();return;}
   else if(k==='opt'){G.opt=G.opt||{};G.opt[el.dataset.o]=el.checked;if(G.mode==='reg')grParts(G);render();return;}
   else if(k==='roff'){G.regOff=G.regOff||{};String(el.dataset.r).split(',').forEach(i=>{if(el.checked)delete G.regOff[i];else G.regOff[i]=1;});render();return;}
-  else if(k==='project'){G.project=el.value;}
+  else if(k==='project'){G.project=el.value;const pr=proj(el.value);if(pr&&(!G.hdr.name||G.hdr.nameAuto)){G.hdr.name=pr.name;G.hdr.nameAuto=1;}render();return;}
   else if(k==='part'){const d=el.dataset.d;G.parts=G.parts.filter(x=>x!==d);if(el.checked)G.parts.push(d);grParts(G);render();return;}
-  else if(k.startsWith('h.')){G.hdr[k.slice(2)]=el.value;if(k==='h.stage'&&G.mode==='reg'){grParts(G);render();return;}if(k==='h.leader'&&G.mode==='gtp'){grRegDefault(G);render();return;}if(k==='h.leader'||k==='h.start'||k==='h.stage'){grRefresh();return;}}
+  else if(k.startsWith('h.')){G.hdr[k.slice(2)]=el.value;if(k==='h.name')G.hdr.nameAuto=0;if(k==='h.stage'&&G.mode==='reg'){grParts(G);render();return;}if(k==='h.leader'&&G.mode==='gtp'){grRegDefault(G);render();return;}if(k==='h.leader'||k==='h.start'||k==='h.stage'){grRefresh();return;}}
   else if(k.startsWith('s.')){S.settings[k.slice(2)]=el.value;save();}
   grRefresh();
 });
@@ -1986,9 +2059,9 @@ function toDoc(text){
 
 /* ---------- диалоги-формы ---------- */
 const dlg=$('#dlg');
-function form(title,fields,onSave,extra){
+function form(title,fields,onSave,extra,moreSum){
   dlg.onchange=null;
-  dlg.innerHTML=`<form method="dialog"><h3>${title}</h3>`+fields.map(f=>{
+  const fld=f=>{
     const v=f.val==null?'':f.val;let inp;
     if(f.html!=null)return f.html;
     if(f.type==='select')inp=`<select name="${f.k}">${f.opts.map(o=>`<option value="${esc(o[0])}" ${String(o[0])===String(v)?'selected':''}>${esc(o[1])}</option>`).join('')}</select>`;
@@ -1996,7 +2069,9 @@ function form(title,fields,onSave,extra){
     else if(f.list)inp=`<input type="text" name="${f.k}" value="${esc(v)}" list="dl_${f.k}" autocomplete="off"><datalist id="dl_${f.k}">${f.list.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>`;
     else inp=`<input type="${f.type||'text'}" name="${f.k}" value="${esc(v)}" ${f.step?'step="'+f.step+'"':''}>`;
     return `<label class="f">${f.label}</label>${inp}`;
-  }).join('')+`<div class="row">${extra||''}<button value="cancel" formnovalidate>Отмена</button><button class="pri" value="ok">Сохранить</button></div></form>`;
+  },mores=fields.filter(f=>f.more);
+  // поля с more:true спрятаны под кнопкой «Все поля» (краткая форма); значения скрытых полей сохраняются как есть
+  dlg.innerHTML=`<form method="dialog"><h3>${title}</h3>`+fields.filter(f=>!f.more).map(fld).join('')+(mores.length?`<div class="bar" style="align-items:center;margin:10px 0 0"><button type="button" data-act="fmore" id="fmb">▾ Все поля</button><span class="s" id="fms" style="margin:0">${moreSum||''}</span></div><div id="fmore" hidden>${mores.map(fld).join('')}</div>`:'')+`<div class="row">${extra||''}<button value="cancel" formnovalidate>Отмена</button><button class="pri" value="ok">Сохранить</button></div></form>`;
   dlg.returnValue='';
   dlg.onclose=()=>{if(dlg.returnValue==='ok'){const v={};fields.filter(f=>f.k).forEach(f=>v[f.k]=dlg.querySelector('[name="'+f.k+'"]').value);onSave(v);}};
   dlg.showModal();
@@ -2010,28 +2085,31 @@ function taskForm(t,kind,draft){
   const isNew=!t;kind=kind||'work';
   t=t||Object.assign({id:uid(),title:'',kind,type:'',project:kind==='home'?'':ui.fp||'',start:'',due:kind==='home'?today():'',imp:2,est:kind==='home'?0.5:1,status:'todo',resp:'',note:'',repeat:''},draft||{});
   const hint=t.__hint;delete t.__hint;const dueOpen=t.dueAuto?t.due0:t.due;
+  const sb=[];if(t.start&&t.start!==dueOpen)sb.push('начало '+fmt(t.start));if(t.tm)sb.push('время '+t.tm);if(t.repeat)sb.push('повтор');if(t.status&&t.status!=='todo')sb.push(stName(t.status).toLowerCase());if(t.pct!=null)sb.push(t.pct+'%');if(+t.spent)sb.push('потрачено '+t.spent+' ч');if(t.resp)sb.push('отв.: '+esc(t.resp));if((t.deps||[]).length)sb.push('есть зависимость');if(t.note)sb.push('есть описание');if(t.cm)sb.push('комментарий');
+  const sum=sb.length?'Скрыто: '+sb.join(' · '):'Ещё: начало, время, повтор, статус, описание…';
   form((isNew?(kind==='home'?'Новая бытовая задача':'Новая задача'):'Задача')+(hint?' — '+hint:''),[
     {k:'title',label:'Название',val:t.title,type:'textarea',rows:2},
-    {k:'cm',label:'Комментарий в плане (например: критично — срыв срока по договору)',val:t.cm||''},
-    {k:'kind',label:'Категория',type:'select',val:t.kind||'work',opts:[['work','Работа'],['home','Дом']]},
     {k:'type',label:'Тип задачи (для расписания по блокам)',val:t.type,list:allTypes()},
     {k:'project',label:'Объект',type:'select',val:t.project,opts:[['','—']].concat(S.projects.map(p=>[p.id,p.name]))},
-    {k:'start',label:'Начало (дата)',type:'date',val:t.start},{k:'tm',label:'Время начала (необязательно, например 14:30)',type:'time',val:t.tm||''},{k:'due',label:'Срок (окончание)',type:'date',val:t.dueAuto?t.due0:t.due},
-    {k:'repeat',label:'Повтор',type:'select',val:t.repeat||'',opts:[['','без повтора'],['d','каждый день'],['wd','по рабочим дням (пн–пт)'],['x','по выбранным дням (укажите ниже)'],['w','каждую неделю'],['m','каждый месяц']]},
-    {k:'daysTxt',label:'Дни недели для «по выбранным дням» (например: пн, ср, пт)',val:daysText(t.days)},
+    {k:'due',label:'Дата (срок выполнения)',type:'date',val:t.dueAuto?t.due0:t.due},
     {k:'imp',label:'Важность',type:'select',val:t.imp,opts:[[3,'Высокая'],[2,'Обычная'],[1,'Низкая']]},
     {k:'est',label:'Оценка всего, часов (длинные задачи — на несколько дней)',type:'number',step:'0.1',val:t.est},
-    {k:'spent',label:'Уже потрачено, часов',type:'number',step:'0.1',val:t.spent||0},
-    {k:'perDay',label:'Не больше часов в день на эту задачу (0 — без ограничения)',type:'number',step:'0.25',val:t.perDay||0},
-    {k:'ent',label:'Вид записи',type:'select',val:t.ent||'task',opts:ENT},
-    {k:'status',label:'Статус',type:'select',val:t.status==='todo'&&!t.stNew?'todo':t.status,opts:ST},
-    {k:'pct',label:'Готовность, % (пусто — по затраченному времени)',type:'number',step:'5',val:t.pct==null?'':t.pct},
-    {k:'section',label:'Раздел документации',val:t.section||''},
-    {k:'dep',label:'Зависит от (должна быть выполнена раньше)',type:'select',val:(t.deps||[])[0]||'',opts:[['','—']].concat(S.tasks.filter(x=>x.id!==t.id&&isOpen(x)&&(!t.project||x.project===t.project)).slice(0,120).map(x=>[x.id,x.title.slice(0,70)]))},
-    {k:'needsData',label:'Необходимые исходные данные',val:t.needsData||''},
-    {k:'deleg',label:'Можно делегировать (кому)',val:t.deleg||''},
-    {k:'resp',label:'Ответственный',val:t.resp},{k:'note',label:'Описание / заметка',type:'textarea',rows:2,val:t.note},
-    {html:histHtml(t)}
+    {k:'cm',more:1,label:'Комментарий в плане (например: критично — срыв срока по договору)',val:t.cm||''},
+    {k:'kind',more:1,label:'Категория',type:'select',val:t.kind||'work',opts:[['work','Работа'],['home','Дом']]},
+    {k:'start',more:1,label:'Начало (дата) — если задача идёт несколько дней; пусто — доступна сразу',type:'date',val:t.start},{k:'tm',more:1,label:'Время начала (необязательно, например 14:30)',type:'time',val:t.tm||''},
+    {k:'repeat',more:1,label:'Повтор',type:'select',val:t.repeat||'',opts:[['','без повтора'],['d','каждый день'],['wd','по рабочим дням (пн–пт)'],['x','по выбранным дням (укажите ниже)'],['w','каждую неделю'],['m','каждый месяц']]},
+    {k:'daysTxt',more:1,label:'Дни недели для «по выбранным дням» (например: пн, ср, пт)',val:daysText(t.days)},
+    {k:'spent',more:1,label:'Уже потрачено, часов',type:'number',step:'0.1',val:t.spent||0},
+    {k:'perDay',more:1,label:'Не больше часов в день на эту задачу (0 — без ограничения)',type:'number',step:'0.25',val:t.perDay||0},
+    {k:'ent',more:1,label:'Вид записи',type:'select',val:t.ent||'task',opts:ENT},
+    {k:'status',more:1,label:'Статус',type:'select',val:t.status==='todo'&&!t.stNew?'todo':t.status,opts:ST},
+    {k:'pct',more:1,label:'Готовность, % (пусто — по затраченному времени)',type:'number',step:'5',val:t.pct==null?'':t.pct},
+    {k:'section',more:1,label:'Раздел документации',val:t.section||''},
+    {k:'dep',more:1,label:'Зависит от (должна быть выполнена раньше)',type:'select',val:(t.deps||[])[0]||'',opts:[['','—']].concat(S.tasks.filter(x=>x.id!==t.id&&isOpen(x)&&(!t.project||x.project===t.project)).slice(0,120).map(x=>[x.id,x.title.slice(0,70)]))},
+    {k:'needsData',more:1,label:'Необходимые исходные данные',val:t.needsData||''},
+    {k:'deleg',more:1,label:'Можно делегировать (кому)',val:t.deleg||''},
+    {k:'resp',more:1,label:'Ответственный',val:t.resp},{k:'note',more:1,label:'Описание / заметка',type:'textarea',rows:2,val:t.note},
+    {html:histHtml(t),more:1}
   ],v=>{
     if(!v.title.trim()){toast('Укажите название');return;}
     if(t.dueAuto){t.due=t.due0||'';delete t.dueAuto;delete t.due0;}
@@ -2049,7 +2127,7 @@ function taskForm(t,kind,draft){
     if(isNew&&(t.imp===3||(t.due&&diff(t.due,today())<=0))&&isWork(t)&&!(t.start&&t.start>today()))t.urgent=1;
     if(isNew)S.tasks.push(t);save();render();if(isNew)afterAdd(t);
     const nr=newRisksCount?newRisksCount():0;if(nr)toast('После изменения под угрозой сроков: '+nr);
-  },isNew?'':`<button type="button" class="dng" data-act="deltask" data-id="${t.id}">Удалить</button>`);
+  },isNew?'':`<button type="button" class="dng" data-act="deltask" data-id="${t.id}">Удалить</button>`,sum);
 }
 const PSTAGES=[['А','А'],['А+С','А+С'],['С','С'],['ППД','ППД'],['ППД+А','ППД+А'],['ППД+А+С','ППД+А+С'],['Без стадии','Без стадии']];
 const pStages=p=>p&&p.stage?PSTAGES:[['','— не выбрана']].concat(PSTAGES);
@@ -2306,8 +2384,20 @@ function renderCalImport(){
   dlg.onchange=e=>{const el=e.target,i=el.dataset.ci;if(i===undefined)return;if(i==='pname'){imp.pname=el.value;return;}
     const it=imp.cal[+i],f=el.dataset.cf;if(f==='inc')it.inc=el.checked;else it[f]=el.value;};
   if(!dlg.open)dlg.showModal();}
+/* этапы, срок которых уже прошёл: спрашиваем, что с ними делать (выполнен / в список задач) */
+function calProjId(){const pn=(imp.pname||'').trim()||'Объект',pr=S.projects.find(x=>x.name.toLowerCase()===pn.toLowerCase());return pr?pr.id:null;}
+function calOverdue(){const t0=today(),pid=calProjId();
+  return imp.cal.filter(it=>it.inc&&it.od==null&&(it.end||it.start)&&(it.end||it.start)<t0&&!(pid&&S.tasks.some(x=>x.cp&&!x.cp.k&&x.cp.num===it.num&&x.project===pid)));}
+function calOverdueAsk(L){
+  dlg.onchange=null;dlg.onclose=null;
+  dlg.innerHTML=`<h3>Срок некоторых этапов уже прошёл</h3><div class="s">Что сделать с этапами, у которых срок раньше сегодняшнего дня (${fmt(today())})?<br><b>Выполнен</b> — этап попадёт в план как закрытый, без напоминаний и задач запуска.<br><b>В список задач</b> — этап появится открытой просроченной задачей.</div>
+  <div class="bar"><button data-act="calodset" data-v="done">Все — выполнены</button><button data-act="calodset" data-v="task">Все — в список задач</button></div>
+  ${L.map(it=>`<div class="cr" style="align-items:flex-start;flex-wrap:wrap"><span class="grow" style="min-width:60%"><b>${esc(it.num)}</b> ${esc(it.title.slice(0,110))}<div class="s">срок: ${fmt(it.end||it.start)}</div></span><select data-od="${imp.cal.indexOf(it)}" style="width:auto"><option value="done">Выполнен</option><option value="task">В список задач</option></select></div>`).join('')}
+  <div class="row"><button data-act="calodback">Назад</button><button class="pri" data-act="calodgo">Продолжить</button></div>`;
+  if(!dlg.open)dlg.showModal();}
 function runCalImport(){
-  const c=imp.cal.filter(x=>x.inc),fname=imp.fname,t0=today();let add=0,upd=0,pend=0;
+  const od=calOverdue();if(od.length){calOverdueAsk(od);return;}
+  const c=imp.cal.filter(x=>x.inc),fname=imp.fname,t0=today();let add=0,upd=0,pend=0,closed=0;
   const pn=(imp.pname||'').trim()||'Объект';let pr=S.projects.find(x=>x.name.toLowerCase()===pn.toLowerCase());
   if(!pr){pr={id:uid(),name:pn,contract:'',customer:'',recipient:'',recipientPos:''};S.projects.push(pr);}const pid=pr.id;
   const made=[];
@@ -2318,16 +2408,17 @@ function runCalImport(){
       if(it.end&&ex.due&&it.end!==ex.due&&!S.pend.some(q=>q.tid===ex.id&&q.f==='due'&&q.to===it.end)){S.pend.push({id:uid(),tid:ex.id,f:'due',from:ex.due,to:it.end,ts:Date.now(),file:fname});pend++;}else if(it.end&&!ex.due)ex.due=it.end;
       if(it.start&&ex.start&&it.start!==ex.start&&!S.pend.some(q=>q.tid===ex.id&&q.f==='start'&&q.to===it.start)){S.pend.push({id:uid(),tid:ex.id,f:'start',from:ex.start,to:it.start,ts:Date.now(),file:fname});pend++;}else if(it.start&&!ex.start)ex.start=it.start;
       ex.cp.type=it.type;ex.cp.rkd=it.rkd;ex.cp.dur=dur;ex.src=src;upd++;made.push([it,ex]);return;}
-    const issue=it.type==='issue',t={id:uid(),title:(it.num+' '+it.title).trim(),kind:'work',ent:issue?'task':'milestone',type:issue?'Акт':'',project:pid,section:it.stage,start:it.start,due:it.end||it.start,imp:issue?3:2,est:issue?1:0,status:'todo',resp:'',note:it.rel?'Условие срока: '+it.rel:'',repeat:'',src,
+    const issue=it.type==='issue',isDone=it.od==='done',t={id:uid(),title:(it.num+' '+it.title).trim(),kind:'work',ent:issue?'task':'milestone',type:issue?'Акт':'',project:pid,section:it.stage,start:it.start,due:it.end||it.start,imp:issue?3:2,est:issue?1:0,status:isDone?'done':'todo',resp:'',note:it.rel?'Условие срока: '+it.rel:'',repeat:'',src,
       cp:{num:it.num,type:it.type,rkd:it.rkd,rkdSt:'',dur,cond:!!(it.cond||it.rel)}};
+    if(isDone){t.doneAt=it.end||it.start;t.note=(t.note?t.note+'\n':'')+'Срок прошёл до загрузки плана; отмечен выполненным при импорте.';t.lrn=1;closed++;}
     S.tasks.push(t);add++;made.push([it,t]);
-    if(it.type==='dev'||it.type==='dev2'){const h={id:uid(),title:'Передать Заказчику / выставить акт: '+it.num+' '+cpShort(t),kind:'work',type:'Акт',project:pid,section:it.stage,start:'',due:t.due,imp:3,est:0.5,status:'todo',resp:'',note:'Автозадача: по факту передачи отсчитывается срок рассмотрения Заказчиком.',repeat:'',src:'авто: календарный план',tpl:'act',cp:{k:'handover',of:t.id}};S.tasks.push(h);t.cp.hid=h.id;}
+    if(!isDone&&(it.type==='dev'||it.type==='dev2')){const h={id:uid(),title:'Передать Заказчику / выставить акт: '+it.num+' '+cpShort(t),kind:'work',type:'Акт',project:pid,section:it.stage,start:'',due:t.due,imp:3,est:0.5,status:'todo',resp:'',note:'Автозадача: по факту передачи отсчитывается срок рассмотрения Заказчиком.',repeat:'',src:'авто: календарный план',tpl:'act',cp:{k:'handover',of:t.id}};S.tasks.push(h);t.cp.hid=h.id;}
   });
   let lastDev=null;made.forEach(([it,t])=>{if(it.type==='dev'||it.type==='dev2'){lastDev=t;}else if(it.type==='review'&&lastDev&&!t.cp.pred&&lastDev.stage!==undefined||it.type==='review'&&lastDev&&!t.cp.pred)t.cp.pred=lastDev.id;if(it.stage!==undefined&&false)lastDev=null;});
   S.settings.cpLead=S.settings.cpLead||10;
   try{cpTick();}catch(e){console.error(e);}
   const back=imp.fromObj&&S.projects.find(x=>x.id===pid);save();imp=null;dlg.onchange=null;dlg.close();if(back){tab='proj';ui.po=back.id;}else tab='plan';render();
-  info('Календарный план добавлен',`<div>Этапов добавлено: <b>${add}</b>, обновлено: <b>${upd}</b>.${pend?` Изменений сроков, ждущих вашего решения: <b>${pend}</b>.`:''}</div><div class="s" style="margin-top:6px">Задачи запуска появятся за ${cpLead()} раб. дней до начала этапа. Для этапов с РКД будет задан вопрос «Предоставлено ли РКД?».</div>`);}
+  info('Календарный план добавлен',`<div>Этапов добавлено: <b>${add}</b>${closed?` (из них отмечено выполненными: <b>${closed}</b>)`:''}, обновлено: <b>${upd}</b>.${pend?` Изменений сроков, ждущих вашего решения: <b>${pend}</b>.`:''}</div><div class="s" style="margin-top:6px">Задачи запуска появятся за ${cpLead()} раб. дней до начала этапа. Для этапов с РКД будет задан вопрос «Предоставлено ли РКД?».</div>`);}
 function cpMk(t,k,title,tpl,docv,note,type,due){const x={id:uid(),title,kind:'work',type,project:t.project,section:t.section||'',start:'',due,imp:3,est:0.5,status:'todo',resp:'',note,repeat:'',src:'авто: календарный план',tpl,docv,cp:{k,of:t.id}};S.tasks.push(x);return x;}
 function cpTick(){
   const t0=today(),L=cpLead();let ch=false;const by=id=>S.tasks.find(x=>x.id===id);
@@ -2700,6 +2791,13 @@ document.addEventListener('click',e=>{
   const b=e.target.closest('[data-act]');if(!b||b.tagName==='INPUT'||b.tagName==='SELECT')return;
   const a=b.dataset.act,id=b.dataset.id,task=S.tasks.find(t=>t.id===id);
   if(a==='reserve'){e.preventDefault();ui.reserve=!ui.reserve;render();}
+  else if(a==='cfall'){S.conf=[];save();render();}
+  else if(a==='cfok'){S.conf=(S.conf||[]).filter(c=>c.id!==b.dataset.cid);save();render();}
+  else if(a==='cfsw'){const c=(S.conf||[]).find(x=>x.id===b.dataset.cid),t=c&&S.tasks.find(x=>x.id===c.tid);
+    if(c&&t){const v=c.took==='theirs'?c.mine:c.theirs;if(v===undefined)delete t[c.k];else t[c.k]=v;
+      if(c.k==='status'){if(t.status==='done'){if(!t.doneAt)t.doneAt=today();}else t.doneAt='';}
+      S.conf=S.conf.filter(x=>x.id!==c.id);save();render();toast('Выбрана другая версия: '+(CFN[c.k]||c.k));}else{S.conf=(S.conf||[]).filter(x=>x.id!==b.dataset.cid);render();}}
+  else if(a==='fmore'){const m=$('#fmore');if(m){m.hidden=!m.hidden;b.textContent=m.hidden?'▾ Все поля':'▴ Кратко';const sm=$('#fms');if(sm)sm.style.display=m.hidden?'':'none';}}
   else if(a==='add')taskForm();
   else if(a==='addhome')taskForm(null,'home');
   else if(a==='mode'){ui.mode=b.dataset.m;ui.modePicked=true;render();}
@@ -2788,7 +2886,7 @@ document.addEventListener('click',e=>{
   else if(a==='thot'||a==='tcold'){if(task){if(a==='thot')task.hot=1;else delete task.hot;dlg.close();save();render();}}
   else if(a==='tpost'){if(task){const t0=today(),late=task.due&&task.due<=t0,call=isCallT(task)&&!isHome(task);
     dlg.onchange=null;dlg.onclose=null;
-    dlg.innerHTML=`<form method="dialog"><h3>Отложить</h3><div class="s">${esc(task.title.slice(0,90))}</div>${late?`<div class="warn">Срок задачи ${task.due<t0?'уже прошёл':'сегодня'} (${fmt(task.due)}). Задача уйдёт из плана дня, но останется в «Отложено сегодня», в просроченных и в критичных сроках.</div>`:''}${call?'<div class="s">Звонок: при переносе важность вырастет, на максимальной важности он не переносится.</div>':''}
+    dlg.innerHTML=`<form method="dialog"><h3>Отложить</h3><div class="s">${esc(task.title.slice(0,90))}</div>${late?`<div class="warn">Срок задачи ${task.due<t0?'уже прошёл':'сегодня'} (${fmt(task.due)}). Задача уйдёт из плана дня, но останется в «Отложено сегодня», в просроченных и в критичных сроках.</div>`:''}${call?(+task.imp>=3?'<div class="warn">Важность звонка уже максимальная, поэтому он больше не переносится: позвоните или отметьте выполненным. Если нужно изменить срок насовсем, откройте звонок и измените дату.</div>':'<div class="s">Звонок: можно перенести на любой рабочий день. При переносе важность вырастет на 1; на максимальной важности звонок больше не переносится.</div>'):''}
     <div class="bar" style="flex-direction:column;align-items:stretch"><button type="button" data-act="tpd" data-id="${task.id}" data-n="1">На следующий рабочий день (${fmt(addWd(t0,1))})</button><button type="button" data-act="tpd" data-id="${task.id}" data-n="2">Через 2 рабочих дня (${fmt(addWd(t0,2))})</button><button type="button" data-act="tpd" data-id="${task.id}" data-n="5">Через неделю (${fmt(addWd(t0,5))})</button>
     <div class="g2"><input type="date" id="tpdate" min="${addDays(t0,1)}"><button type="button" data-act="tpd" data-id="${task.id}" data-n="d">На выбранную дату</button></div></div><div class="row"><button value="cancel">Отмена</button></div></form>`;dlg.showModal();}}
   else if(a==='tpd'){if(task){const t0=today();let d=b.dataset.n==='d'?($('#tpdate').value||''):addWd(t0,+b.dataset.n);if(!d||d<=t0){toast('Выберите дату позже сегодняшней');return;}d=wdSnap(d);
@@ -2861,6 +2959,9 @@ document.addEventListener('click',e=>{
   else if(a==='impcancel'){imp=null;dlg.onchange=null;dlg.close();}
   else if(a==='impgo')runImport();
   else if(a==='calgo')runCalImport();
+  else if(a==='calodset'){dlg.querySelectorAll('[data-od]').forEach(x=>{x.value=b.dataset.v;});}
+  else if(a==='calodgo'){dlg.querySelectorAll('[data-od]').forEach(x=>{imp.cal[+x.dataset.od].od=x.value;});runCalImport();}
+  else if(a==='calodback'){imp.cal.forEach(x=>{delete x.od;});renderCalImport();}
   else if(a==='calplain'){imp.cal=null;renderImport();}
 });
 document.addEventListener('change',e=>{
@@ -2909,13 +3010,16 @@ if('serviceWorker' in navigator&&/^https?:/.test(location.protocol))navigator.se
 let sig='';
 document.addEventListener('change',e=>{const el=e.target;if(!el||el.type!=='date'||el.name!=='due'||!el.closest||!el.closest('dialog'))return;const k=el.closest('dialog').querySelector('[name=kind]');if(k&&k.value==='home')return;if(el.value&&isWkEnd(el.value)){el.value=wdSnap(el.value);toast('Только рабочие дни: выбрано '+fmt(el.value));}},true);
 function softRender(){
-  const P=planBlocks(),g=P.rows.map(r=>(r.cur?'c':'')+(r.past?'p':'-')).join('');
+  const P=planBlocks(),g=P.rows.map(r=>(r.cur?'c':'')+(r.past?'p':'-')).join('')+(offHours()?'o':'');
   if(g!==sig){sig=g;const ae=document.activeElement;if(tab==='today'&&!dlg.open&&!(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)))render();}
 }
 tick();
 applyKB();setInterval(()=>{tick();softRender();},30000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();softRender();try{syRun(false);}catch(e){}try{lnSoon();}catch(e){}}});
-setTimeout(()=>{try{syRun(false);}catch(e){}},2500);setTimeout(()=>{try{lnPerm(false).then(()=>lnSync());}catch(e){}},3000);setInterval(()=>{try{syRun(false);}catch(e){}},300000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();softRender();try{syRun(false);}catch(e){}try{lnSoon();}catch(e){}}else{try{clearTimeout(SYT);syRun(false);}catch(e){}}});
+window.addEventListener('pagehide',()=>{try{clearTimeout(SYT);syRun(false);}catch(e){}});
+window.addEventListener('online',()=>{try{syRun(false);}catch(e){}});
+window.addEventListener('focus',()=>{try{syRun(false);}catch(e){}});
+setTimeout(()=>{try{syRun(false);}catch(e){}},2500);setTimeout(()=>{try{lnPerm(false).then(()=>lnSync());}catch(e){}},3000);setInterval(()=>{try{if(!document.hidden)syRun(false);}catch(e){}},60000);setInterval(()=>{try{syStat();}catch(e){}},30000);
 if(STAGE>=3){$('#tabs').innerHTML=[['today','📅','Сегодня'],['week','🗓','Неделя'],['proj','🏗','Проекты'],['risk','⚠','Риски'],['stat','📊','Статистика'],['buy','🛒','Покупки'],['plan','🗂','План'],['docs','✉','Документы'],['setup','⚙','Настройки']].map(x=>`<button data-tab="${x[0]}"><b>${x[1]}</b>${x[2]}</button>`).join('');}
 render();window.__cpr=1;
 if(STAGE>=3){lockNow();document.addEventListener('visibilitychange',()=>{if(document.hidden)hidAt=Date.now();else if(S.settings.pinh&&hidAt&&Date.now()-hidAt>120000)lockNow();});}
