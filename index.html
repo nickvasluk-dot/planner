@@ -1787,7 +1787,7 @@ function grExpandF(G,tok){if(tok==='*')return G.parts.map(x=>x==='ОП'?'ОП, �
 function grMatrix(G){
   const cal=grCal(),M={},ex=[],all=[];
   const put=(k,d)=>{(M[k]=M[k]||[]);if(!M[k].includes(d))M[k].push(d);};
-  G.items.forEach(it=>{if(!it.inc)return;const d=grDate(G.hdr.start,+it.day,cal),u=+it.day;
+  G.items.forEach(it=>{if(!it.inc)return;const d=grD(G,+it.day,cal),u=+it.day;
     it.f.forEach(ft0=>grExpandF(G,ft0).forEach(ft=>{const row=grRow(G,ft,it);
       if(!row){ex.push({d,from:ft,to:it.t.join(', '),text:it.text,why:'отдел «'+ft+'» отсутствует в форме'});return;}
       it.t.forEach(tt=>{
@@ -1817,7 +1817,7 @@ function grOverlay(G,M){
     if(old.join()===nw.join())return;M[h.k]=nw;
     rp.push({k:h.k,row:h.row,col:h.col,old,nw,r:h.rules[0],ids:h.rules.map(r=>r.ix),text:[...new Set(h.rules.map(r=>r.text))].join('; '),added:!old.length});});
   return rp;}
-function grCellLines(G,mx,k){const a=mx.M[k]||[];return a.map(u=>{const dm=grDM(grDate(G.hdr.start,u,mx.cal));return G.show==='u'?String(u):G.show==='du'?dm+' ('+u+')':dm;});}
+function grCellLines(G,mx,k){const a=mx.M[k]||[];return a.map(u=>{const dm=grDM(grD(G,u,mx.cal));return G.show==='u'?String(u):G.show==='du'?dm+' ('+u+')':dm;});}
 const grColList=G=>{const L=[];GR_COLS.forEach(c=>{if(c==='ПТ'&&!G.pt)return;if(c==='СТРО'){L.push({k:'СТРО1',l:'1',g:'СТРО'},{k:'СТРО2',l:'2',g:'СТРО'},{k:'СТРО3',l:'3',g:'СТРО'});}else L.push({k:c,l:c});});return L;};
 function grHtml(G,doc){
   const H=G.hdr,mx=grMatrix(G),M=mx.M,cols=grColList(G),nC=cols.length;
@@ -1844,7 +1844,7 @@ function grHtml(G,doc){
   h+=`</table><table class="nb" style="width:100%;margin-top:8px"><tr><td class="l" style="font-size:9pt">Зам. директора по проектированию ${esc(H.zam||'')}<br>ГИП ${esc(H.gip||'')}<br>Нач. ПЭО ${esc(H.pe||'')}<br>Диспетчер ${esc(H.disp||'')}</td><td class="l" style="font-size:9pt;vertical-align:top;width:35%">Отправка – ${esc(H.send?fmt(H.send):'________________')}${H.end?'<br>Срок завершения – '+esc(fmt(H.end)):''}<br><span class="sm">Условный день 1 = ${esc(fmt(grDate(H.start,1,mx.cal)))}</span></td></tr></table>`;
   if(mx.ex.length)h+=`<p class="sm" style="margin-top:6px"><b>Задания вне формы:</b> `+mx.ex.map(x=>esc(grDM(x.d)+' '+x.from+' → '+x.to+' ('+(x.text||'').slice(0,50)+'; '+x.why+')')).join('; ')+'</p>';
   // приложение: расшифровка заданий
-  const L=G.items.filter(i=>i.inc).map(i=>({i,d:grDate(H.start,+i.day,mx.cal)})).sort((a,b)=>+a.i.day-+b.i.day||(a.i.f.join()<b.i.f.join()?-1:1));
+  const L=G.items.filter(i=>i.inc).map(i=>({i,d:grD(G,+i.day,mx.cal)})).sort((a,b)=>+a.i.day-+b.i.day||(a.i.f.join()<b.i.f.join()?-1:1));
   h+=`<br style="page-break-before:always"><p class="big" style="page-break-before:always;text-align:center">Перечень заданий к графику № ${esc(H.no)} ${esc(H.cipher)}</p>
   <table style="width:100%"><tr><th>У.д.</th><th>Дата</th><th>От кого</th><th>Кому</th><th>Формы</th><th>Содержание задания</th></tr>${L.map(x=>`<tr><td>${+x.i.day===0?'до нач.':x.i.day}${esc(x.i.mk||'')}</td><td>${grDM(x.d)}</td><td class="l">${esc(x.i.f.map(t=>t==='*'?'все отделы':t==='ВЕД'?H.leader+' (ведущий)':t).join(', '))}</td><td class="l">${esc(x.i.t.map(t=>({ВСЕМ:'Всем отделам',ВЕД:'Ведущему отделу',ГЛИНЖ:'Главному инженеру','*':'отделам'}[t]||t.replace('@',' (')+(t.includes('@')?')':''))).join(', '))}</td><td class="l">${esc(x.i.forms||'')}</td><td class="l">${esc(grFix2(x.i.text))}</td></tr>`).join('')}</table>`;
   if(mx.rep.length)h+=`<p class="sm" style="margin-top:8px"><b>Сверка с регламентом (применён регламент):</b></p><table style="width:100%"><tr><th>Отдел → кому</th><th>По типовому графику, у.д.</th><th>По регламенту, у.д.</th><th>Основание</th></tr>${mx.rep.map(x=>`<tr><td class="l">${esc(x.row+' → '+x.col.replace(/^СТРО(\d)$/,'СТРО ($1)'))}</td><td>${esc(x.old.join(', ')||'—')}</td><td>${esc(x.nw.join(', '))}</td><td class="l">${esc(x.text)}</td></tr>`).join('')}</table>`;
@@ -1854,21 +1854,26 @@ function grHtml(G,doc){
   h+='</div>';return doc?'<html><head><meta charset="utf-8">'+stl+'</head><body>'+h+'</body></html>':stl+h;}
 const grFix2=s=>String(s||'');
 function grName(G){return ('График '+(G.hdr.no||'')+' '+(G.hdr.cipher||'')).trim().replace(/[\\/:*?"<>|]/g,'')||'График';}
-function grCsv(G){const cal=grCal();return csvText([['У.д.','Дата','От кого','Кому','Формы','Содержание']].concat(G.items.filter(i=>i.inc).map(i=>[i.day,fmt(grDate(G.hdr.start,+i.day,cal)),i.f.join(', '),i.t.join(', '),i.forms,i.text])));}
+function grCsv(G){const cal=grCal();return csvText([['У.д.','Дата','От кого','Кому','Формы','Содержание']].concat(G.items.filter(i=>i.inc).map(i=>[i.day,fmt(grD(G,+i.day,cal)),i.f.join(', '),i.t.join(', '),i.forms,i.text])));}
 function grMaxDay(G){return G.items.filter(i=>i.inc).reduce((m,i)=>Math.max(m,+i.day||0),0);}
-function grEndCalc(G){const m=grMaxDay(G);return m>0?grDate(G.hdr.start,m,grCal()):'';}
-function grBack(end,n,c){let d=end;for(let i=0;i<40&&!grIsW(d,c);i++)d=addDays(d,-1);for(let i=1;i<n;i++){d=addDays(d,-1);for(let k=0;k<40&&!grIsW(d,c);k++)d=addDays(d,-1);}return d;}
-function grEndInfo(G){const H=G.hdr,ce=grEndCalc(G);if(!ce)return '';
-  let h=`Расчётное завершение (последнее задание, у.д. ${grMaxDay(G)}): <b>${fmt(ce)}</b>.`;
-  if(H.end){const d=diff(ce,H.end);
-    if(d>0)h+=` <b style="color:var(--red)">Позже заданного срока на ${d} дн.</b> <button type="button" data-gact="fitend">Сдвинуть день 1 под срок</button>`;
-    else if(d<0)h+=` Укладывается в срок, запас ${-d} дн.`;
-    else h+=' Совпадает со сроком завершения.';
-    if(d!==0&&d<0)h+=` <button type="button" data-gact="fitend">Сдвинуть день 1 вплотную к сроку</button>`;}
+/* срок завершения: условные дни сжимаются пропорционально, чтобы последнее задание пришлось на дату окончания (удлинять график не нужно) */
+function grScale(G,c){const e=G.hdr.end,M=grMaxDay(G);if(!e||M<2||!G.hdr.start)return null;
+  const key=[G.hdr.start,e,M,S.settings.grHol||'',S.settings.grWork||''].join('|');if(G._sc&&G._sc.key===key)return G._sc.v;
+  let d=grDate(G.hdr.start,1,c),N=0;for(let i=0;i<800&&d<=e;i++){if(grIsW(d,c))N++;d=addDays(d,1);}
+  const v=N>=M?null:{N,M,k:N>1?(N-1)/(M-1):0};Object.defineProperty(G,'_sc',{value:{key,v},writable:true,enumerable:false,configurable:true});return v;}
+function grD(G,day,c){c=c||grCal();const sc=grScale(G,c);let u=+day;if(sc&&u>1)u=1+Math.round((u-1)*sc.k);return grDate(G.hdr.start,u,c);}
+function grEndCalc(G){const m=grMaxDay(G);return m>0?grD(G,m,grCal()):'';}
+function grEndInfo(G){const H=G.hdr,M=grMaxDay(G);if(M<1)return '';const c=grCal();
+  const nat=grDate(H.start,M,c);let h=`Без сжатия график заканчивается <b>${fmt(nat)}</b> (у.д. ${M}).`;
+  if(!H.end)return h+' Укажите срок завершения, и сроки заданий пересчитаются пропорционально.';
+  const sc=grScale(G,c);
+  if(sc)h+=` <b style="color:var(--red)">Срок сжат:</b> на всё отведено ${sc.N} раб. дн. вместо ${M}, все сроки заданий пересчитаны пропорционально (коэффициент ${sc.k.toFixed(2)}). Последнее задание: ${fmt(grD(G,M,c))}.`;
+  else h+=' Срок завершения не короче расчётного: сжатие не требуется'+(diff(H.end,nat)>0?`, запас ${diff(H.end,nat)} дн.`:'')+'.';
+  if(sc&&sc.N<2)h+=' <b style="color:var(--red)">Дата окончания слишком близка к началу.</b>';
   return h;}
 function grSave(G){delete G.dirty;G.upd=Date.now();const i=S.graphs.findIndex(x=>x.id===G.id);if(i>=0)S.graphs[i]=G;else S.graphs.push(G);save();}
 function grTasks(G){const cal=grCal();let n=0;
-  G.items.filter(i=>i.inc&&i.f.includes('ГИП')).forEach(i=>{const d=grDate(G.hdr.start,+i.day,cal),ttl='График '+(G.hdr.no||G.code)+(G.hdr.cipher?' ('+G.hdr.cipher+')':'')+': '+(i.text||'выдача').slice(0,90)+' → '+i.t.map(t=>({ВСЕМ:'всем отделам',ГЛИНЖ:'главному инженеру'}[t]||t)).join(', ');
+  G.items.filter(i=>i.inc&&i.f.includes('ГИП')).forEach(i=>{const d=grD(G,+i.day,cal),ttl='График '+(G.hdr.no||G.code)+(G.hdr.cipher?' ('+G.hdr.cipher+')':'')+': '+(i.text||'выдача').slice(0,90)+' → '+i.t.map(t=>({ВСЕМ:'всем отделам',ГЛИНЖ:'главному инженеру'}[t]||t)).join(', ');
     if(S.tasks.some(t=>t.title===ttl&&t.project===G.project))return;
     S.tasks.push({id:uid(),title:ttl,kind:'work',type:'График',project:G.project,start:'',due:d,imp:3,est:0.5,status:'todo',resp:'',note:'Создано из графика выдачи заданий (условный день '+i.day+').',repeat:'',src:'график выдачи заданий'});n++;});
   if(G.hdr.end){const ttl='График '+(G.hdr.no||G.code)+(G.hdr.cipher?' ('+G.hdr.cipher+')':'')+': срок завершения графика';
@@ -1881,7 +1886,7 @@ function grList(){
   return `<h2>📅 Графики выдачи заданий</h2><div class="s">100-дневные графики по типовым ГТП и регламенту, форма «График №». Условные дни пересчитываются в даты по рабочим дням.</div>`+
   (L.length?L.map(G=>`<div class="card"><div class="grow" data-gact="open" data-id="${G.id}"><div class="t">№ ${esc(G.hdr.no||'—')} · ${esc(G.hdr.name||G.hdr.cipher||'без названия')}${G.hdr.name&&G.hdr.cipher?' · '+esc(G.hdr.cipher):''}</div><div class="s">${G.mode==='reg'?'По регламенту':'ГТП-'+esc(G.code)+'-06'} · стадия «${esc(G.hdr.stage)}» · день 1: ${fmt(G.hdr.start)}${G.hdr.end?' · срок завершения: '+fmt(G.hdr.end):''}</div></div></div>`).join(''):'')+
   `<div class="bar"><button class="pri" data-gact="new">+ Составить график</button></div>`;}
-function grItemRow(G,it,ix,cal){const d=grDate(G.hdr.start,+it.day,cal),toS=it.t.map(t=>({ВСЕМ:'всем',ВЕД:'ведущему',ГЛИНЖ:'гл. инж.','*':'отделам'}[t]||t.replace('@',' ('))+(t.includes('@')?')':'')).join(', '),frS=it.f.map(t=>t==='*'?'все':t==='ВЕД'?'ведущий':t).join(', ');
+function grItemRow(G,it,ix,cal){const d=grD(G,+it.day,cal),toS=it.t.map(t=>({ВСЕМ:'всем',ВЕД:'ведущему',ГЛИНЖ:'гл. инж.','*':'отделам'}[t]||t.replace('@',' ('))+(t.includes('@')?')':'')).join(', '),frS=it.f.map(t=>t==='*'?'все':t==='ВЕД'?'ведущий':t).join(', ');
   const hasStro=it.t.includes('СТРО');
   return `<div class="cr" style="align-items:flex-start;gap:6px"><input type="checkbox" data-gset="inc" data-ix="${ix}" ${it.inc?'checked':''}>
   <input type="number" min="0" max="200" style="width:54px" data-gset="day" data-ix="${ix}" value="${it.day}" title="Условный день">
@@ -1916,7 +1921,7 @@ function vGraph(){
   <div class="bar"><button data-gact="save">Сохранить</button><button class="pri" data-gact="doc">Скачать Word (.docx)</button><button data-gact="tasks">Задачи ГИПа по графику</button>${S.graphs.some(x=>x.id===G.id)?'<button class="dng" data-gact="del">Удалить</button>':''}</div>
   <h2>Предпросмотр</h2><div id="grprev" style="overflow-x:auto;background:#fff;color:#000;padding:6px;border-radius:6px;min-width:0">${grHtml(G,false)}</div>`;
   return h;}
-function grRefresh(){const G=ui.gr;if(!G)return;const p=$('#grprev');if(p)p.innerHTML=grHtml(G,false);const ge=$('#grend');if(ge)ge.innerHTML=grEndInfo(G);const cal=grCal();G.items.forEach((it,ix)=>{const e=$('#grd'+ix);if(e)e.textContent=grDM(grDate(G.hdr.start,+it.day,cal));});}
+function grRefresh(){const G=ui.gr;if(!G)return;const p=$('#grprev');if(p)p.innerHTML=grHtml(G,false);const ge=$('#grend');if(ge)ge.innerHTML=grEndInfo(G);const cal=grCal();G.items.forEach((it,ix)=>{const e=$('#grd'+ix);if(e)e.textContent=grDM(grD(G,+it.day,cal));});}
 async function grDocx(G){
   if(typeof JSZip==='undefined')throw new Error('JSZip отсутствует');
   const H=G.hdr,mx=grMatrix(G),cols=grColList(G),nC=cols.length;
@@ -1967,7 +1972,7 @@ async function grDocx(G){
   // перечень заданий
   b+='<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
   b+=par('Перечень заданий к графику № '+(H.no||'')+' '+(H.cipher||''),{sz:24,b:1,al:'center',after:100});
-  const L=G.items.filter(i=>i.inc).map(i=>({i,d:grDate(H.start,+i.day,mx.cal)})).sort((a,b)=>+a.i.day-+b.i.day||(a.i.f.join()<b.i.f.join()?-1:1));
+  const L=G.items.filter(i=>i.inc).map(i=>({i,d:grD(G,+i.day,mx.cal)})).sort((a,b)=>+a.i.day-+b.i.day||(a.i.f.join()<b.i.f.join()?-1:1));
   const nm=t=>({ВСЕМ:'Всем отделам',ВЕД:'Ведущему отделу',ГЛИНЖ:'Главному инженеру','*':'отделам'}[t]||t.replace('@',' (')+(t.includes('@')?')':''));
   const g2=[620,820,1500,1900,1400,4532];
   b+=tbl(g2,[tr(['У.д.','Дата','От кого','Кому','Формы','Содержание задания'].map((t,k)=>tc(t,{w:g2[k],b:1,sz:15,al:'center',sh:1})),300)].concat(L.map(x=>tr([
@@ -1998,7 +2003,6 @@ document.addEventListener('click',e=>{
   if(a==='open'){const G=S.graphs.find(x=>x.id===b.dataset.id);if(G){ui.gr=JSON.parse(JSON.stringify(G));ui.grDirty=0;render();window.scrollTo(0,0);}return;}
   const G=ui.gr;if(!G)return;
   if(a==='back'){if(ui.grDirty&&!S.graphs.some(x=>x.id===G.id))grSave(G);ui.grDirty=0;ui.gr=null;render();}
-  else if(a==='fitend'){const m=grMaxDay(G);if(G.hdr.end&&m>0){G.hdr.start=grBack(G.hdr.end,m,grCal());ui.grDirty=1;if(S.graphs.some(x=>x.id===G.id))grSave(G);render();toast('День 1 = '+fmt(G.hdr.start)+': последнее задание выпадает на '+fmt(G.hdr.end));}else toast('Укажите срок завершения графика');}
   else if(a==='save'){grSave(G);ui.grDirty=0;toast('График сохранён');render();}
   else if(a==='print')grPrint(G);
   else if(a==='doc'){grDocx(G).then(bl=>{download(bl,grName(G)+'.docx');toast('Файл Word сохранён');}).catch(err=>{console.error(err);toast('Не удалось собрать файл Word');});}
@@ -2091,7 +2095,7 @@ function taskForm(t,kind,draft){
     {k:'title',label:'Название',val:t.title,type:'textarea',rows:2},
     {k:'type',label:'Тип задачи (для расписания по блокам)',val:t.type,list:allTypes()},
     {k:'project',label:'Объект',type:'select',val:t.project,opts:[['','—']].concat(S.projects.map(p=>[p.id,p.name]))},
-    {k:'due',label:'Дата (срок выполнения)',type:'date',val:t.dueAuto?t.due0:t.due},
+    {k:'due',label:'Дата (начало и окончание)',type:'date',val:t.dueAuto?t.due0:t.due},
     {k:'imp',label:'Важность',type:'select',val:t.imp,opts:[[3,'Высокая'],[2,'Обычная'],[1,'Низкая']]},
     {k:'est',label:'Оценка всего, часов (длинные задачи — на несколько дней)',type:'number',step:'0.1',val:t.est},
     {k:'cm',more:1,label:'Комментарий в плане (например: критично — срыв срока по договору)',val:t.cm||''},
@@ -2113,6 +2117,8 @@ function taskForm(t,kind,draft){
   ],v=>{
     if(!v.title.trim()){toast('Укажите название');return;}
     if(t.dueAuto){t.due=t.due0||'';delete t.dueAuto;delete t.due0;}
+    const compact=!!(document.getElementById('fmore')&&document.getElementById('fmore').hidden); // краткая форма: одна дата = и начало, и окончание
+    if(compact&&v.due&&(isNew||v.due!==dueOpen||!t.start))v.start=v.due;
     const wasOpen=!isNew&&isOpen(t),dep=v.dep;delete v.dep;const dtx=v.daysTxt;delete v.daysTxt;
     Object.assign(t,v,{imp:+v.imp,est:+v.est||0,spent:+v.spent||0,perDay:+v.perDay||0,title:v.title.trim(),type:v.type.trim(),pct:v.pct===''?undefined:Math.max(0,Math.min(100,+v.pct||0))});
     if(!/^\d{1,2}:\d{2}$/.test(t.tm||''))delete t.tm;else{const mm=t.tm.match(/(\d+):(\d+)/);t.tm=pad(+mm[1])+':'+mm[2];if(t.ent==='meeting'&&!t.mt){const f=+mm[1]*60+ +mm[2];t.mt=hm(f)+'-'+hm(f+Math.max(30,Math.round((+t.est||1)*60)));}}
