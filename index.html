@@ -75,6 +75,7 @@ details summary{cursor:pointer;color:var(--mut);margin:8px 0}
 .dc .t{font-size:16px;font-weight:600}
 .dc .cm{font-size:13.5px;margin-top:2px}.dc.hi .cm{color:var(--red);font-weight:600}.dc.md .cm{color:#a85d14}
 .dc .mt{font-size:12.5px;color:var(--mut);margin-top:3px}.dc .mt .r{color:var(--red);font-weight:600}
+@keyframes ckpop{0%{transform:scale(1)}45%{transform:scale(1.4)}100%{transform:scale(1)}}@keyframes ckout{0%{opacity:1;max-height:220px}35%{opacity:1;transform:none}100%{opacity:0;transform:translateX(36px);max-height:0;margin-top:0;margin-bottom:0;padding-top:0;padding-bottom:0;border-width:0}}.ckdone{animation:ckout .55s ease-in .15s forwards;overflow:hidden;pointer-events:none}.ckdone input[type=checkbox]{animation:ckpop .28s ease-out;accent-color:#2e9e5b}.ckdone .t,.ckdone .grow{text-decoration:line-through;opacity:.65}@media (prefers-reduced-motion:reduce){.ckdone{animation:none}}
 .dc .ac{display:flex;flex-direction:column;gap:6px;flex:none}.dc .ac button{padding:4px 9px;font-size:13px}
 .dc.done .t{text-decoration:line-through;opacity:.6}
 .crit{background:var(--card);border:1px solid var(--red);border-left:4px solid var(--red);border-radius:10px;padding:8px 10px;margin:8px 0}
@@ -1540,6 +1541,7 @@ function blockView(){
   let h=P.meet?'<div class="warn">Сегодня день оперативного совещания.</div>':'';
   if(L.lost)h+=`<div class="s" style="margin:6px 0">☎ Прерываний сегодня: ${L.hits||0}, потеряно ${L.lost} мин. План считается от текущего времени, не сделанное переносится дальше.</div>`;
   if(miss.length)h+=`<div class="warn"><b>Не успели по плану:</b> ${miss.slice(0,5).map(m=>esc(m.t.title)+' ('+m.miss+' ч, блок '+hm(m.from)+')').join('; ')}${miss.length>5?' и ещё '+(miss.length-5):''}. Остаток уже перенесён в ближайшие блоки.</div>`;
+  P.rows.forEach(r=>{r.items.forEach(x=>SHOWN.add(x.t.id));r.calls.forEach(c=>SHOWN.add(c.id));});
   const past=P.rows.filter(r=>r.past&&!r.b.fixed),live=P.rows.filter(r=>!r.past);
   if(past.length)h+=`<details><summary>Прошедшие блоки (${past.length})</summary>${past.map(r=>`<div class="s">${hm(r.b.from)}–${hm(r.b.to)} ${esc(r.b.name)}</div>`).join('')}</details>`;
   if(!live.length)h+='<div class="empty">Рабочий день закончился. План на завтра появится утром.</div>';
@@ -1554,7 +1556,8 @@ function blockView(){
   });
   if(P.callsLeft)h+=`<div class="s">Ещё звонков вне блоков: ${P.callsLeft}</div>`;
   const t0r=today(),restMust=P.rest.filter(t=>t.due&&diff(t.due,t0r)<=0),restOther=P.rest.filter(t=>!(t.due&&diff(t.due,t0r)<=0));
-  if(restMust.length)h+=`<div class="crit"><b>Не распределены, но срок сегодня или просрочены (${restMust.length})</b>${restMust.slice(0,10).map(dayCard).join('')}</div>`;
+  if(restMust.length)h+=`<div class="crit"><b>Не распределены, но срок сегодня или просрочены (${restMust.length})</b>${restMust.map(dayCard).join('')}</div>`;
+  restMust.forEach(t=>SHOWN.add(t.id));
   if(restOther.length)h+=`<details><summary>Не попали в блоки (${restOther.length}) — другой тип, без типа или не хватило времени</summary>${restOther.slice(0,15).map(dayCard).join('')}${restOther.length>15?`<div class="s">… и ещё ${restOther.length-15}</div>`:''}</details>`;
   h+=waitView();
   return h;
@@ -1569,6 +1572,7 @@ function homeSection(){
   if(H.later.length)h+=`<details><summary>Бытовые на потом (${H.later.length})</summary>${H.later.map(card).join('')}</details>`;
   return h;
 }
+let SHOWN=new Set();
 function vToday(){
   const t0=today(),P=planDay('work');
   const open=S.tasks.filter(t=>isOpen(t));
@@ -1584,7 +1588,6 @@ function vToday(){
   head0+=confView();
   if(syCfg())head0+=`<div class="bar" style="align-items:center"><button class="pri" data-act="synow">⟳ Синхронизировать</button><span class="s" style="margin:0">${SY.err?'<span style="color:var(--red)">ошибка: '+esc(SY.err.slice(0,70))+'</span>':'☁ '+syAgo(SY.last)}</span></div>`;
   h+=`<div class="bar"><button data-act="replan">⟳ Пересчитать план</button>${STAGE>=2?'<button data-act="chat">💬 Помощник</button>':''}${cl0.length?'':'<button data-act="newcall">+ Звонок</button>'}</div>`;
-  if(STAGE>=2)h+=`<form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Быстрый ввод: например, «Проверить замечания по разделу ОВ для объекта А до среды, примерно два часа, после получения обновлённой схемы»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form>`;
   const cl=callsToday();if(cl.length)h+=callsView();
   const sig=[];
   const pv=pendView(),ov=overloadView(),ot=otView();let kv='';
@@ -1611,13 +1614,18 @@ function vToday(){
   if(tq.length)h+=`<div class="warn">Ждут разбора: ${tq.length} (без срока, просрочены больше 30 дней или во входящих). <button data-act="triage">Разобрать</button></div>`;
   const weekend=isWkEnd(t0);
   h+=`<div class="seg"><button data-act="mode" data-m="blocks" class="${ui.mode==='blocks'?'on':''}">По блокам дня</button><button data-act="mode" data-m="list" class="${ui.mode==='list'?'on':''}">Списком</button></div>`;
+  if(STAGE>=2)h+=`<h2>Рабочие задачи</h2><form id="qq" class="qa" style="margin:8px 0"><input type="text" id="qqtext" name="text" placeholder="Новая рабочая задача: например, «Проверить замечания по разделу ОВ для объекта А до среды, примерно два часа»" autocomplete="off"><div class="bar"><button class="pri">+ Добавить</button>${aiOn()?'<button type="button" data-act="qai">ИИ-разбор</button>':''}</div></form>`;
+  SHOWN=new Set(cl.map(c=>c.id));
   if(ui.mode==='blocks')h+=blockView();
   else{
+    P.day.forEach(t=>SHOWN.add(t.id));
     h+=`<h2>План на ${fmt(t0)} · ${P.used} из ${P.cap} ч</h2>`;
     h+=P.day.length?P.day.map(dayCard).join(''):'<div class="empty">На сегодня задач нет 🎉</div>';
     if(P.reserve.length){h+=`<h2><a href="#" data-act="reserve" style="color:inherit">Резерв (${P.reserve.length}) ${ui.reserve?'▾':'▸'}</a></h2>`;if(ui.reserve)h+=P.reserve.map(dayCard).join('');}
     if(P.later.length)h+=`<details><summary>Ещё не начались (${P.later.length})</summary>${P.later.map(dayCard).join('')}</details>`;
   }
+  {const odAll=open.filter(t=>hm_(t)&&t.due&&diff(t.due,t0)<0&&!SHOWN.has(t.id)).sort((a,b)=>a.due<b.due?-1:1);
+    if(odAll.length)h+=`<div class="crit" style="margin-top:8px"><b>Просрочено, не вошло в план дня (${odAll.length})</b><div class="s">Эти задачи считаются в кнопке «просрочено», но в план на сегодня не попали (ждут данные, без оценки времени, другой тип и т. п.).</div>${odAll.map(t=>dayCard(t)).join('')}</div>`;}
   if(STAGE<3){const rl=risksList();if(rl.length)h+=`<details><summary>Риски по срокам (${rl.length})</summary>${riskView()}</details>`;}
   const pp=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&t.hold&&t.hold>t0&&t.mvd===t0&&!t.repeat);
   if(pp.length)h+=`<details style="margin-top:8px"><summary>⏳ Отложено сегодня (${pp.length})</summary>${pp.map(t=>`<div class="cr"><span class="grow s">${esc(t.title)} — до ${fmt(t.hold)}${t.due&&t.due<=t0?' <span class="b red">срок '+(t.due<t0?'прошёл':'сегодня')+'</span>':''}</span><button data-act="tunhold" data-id="${t.id}">Вернуть</button></div>`).join('')}</details>`;
@@ -1817,7 +1825,7 @@ function grMake(code,mode){
   return G;}
 /* регламент написан для объектов с ведущим отделом МТО (ТХ): для остальных по умолчанию применяются только его завершающие сроки (ПЗ, ОП, СМО, ПОС, ТЭО, ОВП); остальные правила можно включить вручную */
 function grRegDefault(G){G.regOff={};if(G.mode==='gtp'&&G.hdr.leader!=='МТО')GREGC.forEach(r=>{if(!r.fin)G.regOff[r.ix]=1;});}
-function grIncFor(G,it,P){P=P||new Set(G.parts);const f=it.f[0],t=it.t[0];
+function grIncFor(G,it,P){if(it.custom)return it.inc!==false;P=P||new Set(G.parts);const f=it.f[0],t=it.t[0];
   const fo=f==='*'||f==='ВЕД'||f==='ГИП'||P.has(f==='ОП, ОТ'?'ОП':f);
   const to=t==='*'||t==='ВЕД'||t==='ВСЕМ'||P.has(t)||['ОВП','СМО','МТО (ПЗ)'].includes(t);
   const rr=it.rid==null?null:(G.mode==='reg'?GREGC[it.rid]:G.mode==='pre'?GPREC[it.rid]:null);
@@ -1836,8 +1844,8 @@ function grMatrix(G){if(G.mode!=='combo')return grMatrix1(G);
   return {M,MS,ex,all,cal,rep};}
 function grMatrix1(G){
   const cal=grCal(),M={},ex=[],all=[],R0=G.root||G;
-  const put=(k,d)=>{(M[k]=M[k]||[]);if(!M[k].includes(d))M[k].push(d);};
-  G.items.forEach(it=>{if(!it.inc)return;const d=grD(R0,+it.day,cal),u=+it.day;
+  const man={},put0=(k,d)=>{(M[k]=M[k]||[]);if(!M[k].includes(d))M[k].push(d);};let curMan=false;const put=(k,d)=>{put0(k,d);if(curMan)man[k]=1;};
+  G.items.forEach(it=>{if(!it.inc)return;curMan=!!(it.man||it.custom);const d=grD(R0,+it.day,cal),u=+it.day;
     it.f.forEach(ft0=>grExpandF(G,ft0).forEach(ft=>{const row=grRow(G,ft,it);
       if(!row){ex.push({d,from:ft,to:it.t.join(', '),text:it.text,why:'отдел «'+ft+'» отсутствует в форме'});return;}
       it.t.forEach(tt=>{
@@ -1848,10 +1856,10 @@ function grMatrix1(G){
           if(!col){ex.push({d,from:row,to:t1==='ГЛИНЖ'?'Главному инженеру':t1,text:it.text,why:t1==='ГЛИНЖ'?'нет колонки в форме':t1==='ПТ'?'колонка ПТ отключена':'нет колонки в форме'});return;}
           put(row+'|'+(col==='СТРО'?'СТРО'+(it.sub||grSub(it)):col),u);});});}));});
   Object.keys(M).forEach(k=>M[k].sort((a,b)=>a-b));ex.sort((a,b)=>a.d<b.d?-1:1);
-  const rp=G.mode==='gtp'&&G.prio!=='gtp'?grOverlay(G,M):[];
+  const rp=G.mode==='gtp'&&G.prio!=='gtp'?grOverlay(G,M,man):[];
   return {M,ex,all,cal,rep:rp};}
 /* регламент поверх типового графика: состав заданий даёт ГТП, сроки (там, где правило есть) даёт регламент */
-function grOverlay(G,M){
+function grOverlay(G,M,man){man=man||{};
   const R=GREGC.filter(r=>grRuleOk(G,r)&&!(G.regOff||{})[r.ix]),keys=Object.keys(M),hits={},sh=+G.shift||0;
   const part=new Set(); // участвующие отделы: выдающие и получающие задания
   keys.forEach(k=>{const q=k.split('|'),row=q[0],col=q[1];if(row!=='ГИП')part.add(row==='ГП вер.пл.'?'ГП':row);if(!['МТО (ПЗ)','ОВП'].includes(col)){const cr=col==='ОП'?'ОП, ОТ':col.replace(/^СТРО\d$/,'СТРО');if(GR_ROWS.includes(cr)&&cr!=='ГИП')part.add(cr);}});
@@ -1866,7 +1874,8 @@ function grOverlay(G,M){
       if(r.t==='СТРО'){if(colsOf(row).some(c=>/^СТРО\d$/.test(c)))add(row,'СТРО'+(r.sub||1),r);return;}
       if((M[row+'|'+r.t]||[]).length)add(row,r.t,r);});});
   const rp=[];
-  Object.values(hits).forEach(h=>{const old=(M[h.k]||[]).slice(),days=[...new Set(h.rules.map(r=>r.day+sh))].sort((a,b)=>a-b),fin=h.rules.some(r=>r.fin);
+  Object.values(hits).forEach(h=>{if(man[h.k])return; // срок изменён вручную или задание своё: регламент его не перезаписывает
+    const old=(M[h.k]||[]).slice(),days=[...new Set(h.rules.map(r=>r.day+sh))].sort((a,b)=>a-b),fin=h.rules.some(r=>r.fin);
     const nw=fin?old.filter(x=>x<60+sh&&!days.includes(x)).concat(days):days.concat(old.slice(days.length).filter(x=>x>days[days.length-1]));
     if(old.join()===nw.join())return;M[h.k]=nw;
     rp.push({k:h.k,row:h.row,col:h.col,old,nw,r:h.rules[0],ids:h.rules.map(r=>r.ix),text:[...new Set(h.rules.map(r=>r.text))].join('; '),added:!old.length});});
@@ -1941,14 +1950,16 @@ function grEndInfo(G){const H=G.hdr,M=grMaxDay(G);if(M<1)return '';const c=grCal
   if(sc&&sc.N<2)h+=' <b style="color:var(--red)">Дата окончания слишком близка к началу.</b>';
   return h;}
 function grSave(G){delete G.dirty;G.upd=Date.now();const i=S.graphs.findIndex(x=>x.id===G.id);if(i>=0)S.graphs[i]=G;else S.graphs.push(G);save();}
-function grTasks(G){const cal=grCal();let n=0;
+function grTasks(G,onlyUpd){const cal=grCal();let n=0;
   grAllItems(G).filter(i=>i.inc&&i.f.includes('ГИП')).forEach(i=>{const d=grD(G,+i.day,cal),ttl='График '+(G.hdr.no||G.code||'')+(G.hdr.cipher?' ('+G.hdr.cipher+')':'')+': '+(i.tag&&G.mode==='combo'?'['+i.tag+'] ':'')+(i.text||'выдача').slice(0,90)+' → '+i.t.map(t=>({ВСЕМ:'всем отделам',ГЛИНЖ:'главному инженеру'}[t]||t)).join(', ');
-    if(S.tasks.some(t=>t.title===ttl&&t.project===G.project))return;
+    const ex0=S.tasks.find(t=>t.title===ttl&&t.project===G.project);
+    if(ex0){if(isOpen(ex0)&&ex0.src==='график выдачи заданий'&&ex0.due!==d){ex0.due=d;n++;}return;}
+    if(onlyUpd)return;
     S.tasks.push({id:uid(),title:ttl,kind:'work',type:'График',project:G.project,start:'',due:d,imp:3,est:0.5,status:'todo',resp:'',note:'Создано из графика выдачи заданий (условный день '+i.day+').',repeat:'',src:'график выдачи заданий'});n++;});
-  if(G.hdr.end){const ttl='График '+(G.hdr.no||G.code||'')+(G.hdr.cipher?' ('+G.hdr.cipher+')':'')+': срок завершения графика';
+  if(G.hdr.end||(onlyUpd&&false)){const ttl='График '+(G.hdr.no||G.code||'')+(G.hdr.cipher?' ('+G.hdr.cipher+')':'')+': срок завершения графика';
     const ex=S.tasks.find(t=>t.title===ttl&&t.project===G.project);
     if(ex){if(ex.due!==G.hdr.end&&isOpen(ex)){ex.due=G.hdr.end;n++;}}
-    else{S.tasks.push({id:uid(),title:ttl,kind:'work',ent:'milestone',type:'График',project:G.project,start:'',due:G.hdr.end,imp:3,est:0,status:'todo',resp:'',note:'Контрольный срок завершения графика выдачи заданий.',repeat:'',src:'график выдачи заданий'});n++;}}
+    else if(!onlyUpd){S.tasks.push({id:uid(),title:ttl,kind:'work',ent:'milestone',type:'График',project:G.project,start:'',due:G.hdr.end,imp:3,est:0,status:'todo',resp:'',note:'Контрольный срок завершения графика выдачи заданий.',repeat:'',src:'график выдачи заданий'});n++;}}
   if(n)save();return n;}
 function grList(){
   const L=S.graphs.slice().sort((a,b)=>b.upd-a.upd);
@@ -1963,7 +1974,15 @@ function grItemRow(G,it,ix,cal,ci){const T=ci==null?G:G.comps[ci],sh=ci==null?0:
   const hasStro=it.t.includes('СТРО');
   return `<div class="cr" style="align-items:flex-start;gap:6px"><input type="checkbox" data-gset="inc" data-ix="${ix}"${A} ${it.inc?'checked':''}>
   <input type="number" min="0" max="200" style="width:54px" data-gset="day" data-ix="${ix}"${A} value="${it.day}" title="Условный день">
-  <span class="grow s"><b>${esc(frS)} → ${esc(toS)}</b> · <span id="grd${ci==null?'':ci+'_'}${ix}">${grDM(d)}</span>${it.mk?' ⚑'+esc(it.mk):''}<br>${esc(it.text||'').slice(0,140)}${hasStro?` <select data-gset="sub" data-ix="${ix}"${A} title="Колонка СТРО"><option value="">СТРО авто (${grSub(it)})</option>${[1,2,3].map(n=>`<option value="${n}" ${it.sub===n?'selected':''}>СТРО ${n}</option>`).join('')}</select>`:''}</span></div>`;}
+  <span class="grow s"><b>${esc(frS)} → ${esc(toS)}</b> · <span id="grd${ci==null?'':ci+'_'}${ix}">${grDM(d)}</span>${it.mk?' ⚑'+esc(it.mk):''}${it.custom?' <span class="b orange">своё</span>':it.man?' <span class="b" title="Срок задан вручную: регламент его не меняет">✎</span>':''}<br>${esc(it.text||'').slice(0,140)}${hasStro?` <select data-gset="sub" data-ix="${ix}"${A} title="Колонка СТРО"><option value="">СТРО авто (${grSub(it)})</option>${[1,2,3].map(n=>`<option value="${n}" ${it.sub===n?'selected':''}>СТРО ${n}</option>`).join('')}</select>`:''}</span>${it.custom?`<button type="button" class="dng" data-gact="cdel" data-ix="${ix}"${A} title="Удалить задание">✕</button>`:''}</div>`;}
+/* форма: своё задание в график */
+function grCustomForm(G){const cmb=G.mode==='combo',fo=GR_ROWS.map(r=>`<option>${r}</option>`).join(''),to='<option value="ВСЕМ">Всем отделам</option>'+GR_COLS.map(c=>c==='СТРО'?[1,2,3].map(n=>`<option value="СТРО${n}">СТРО (${n})</option>`).join(''):`<option>${c}</option>`).join('');
+  return `<details class="card" style="display:block"><summary><b>+ Своё задание в график</b></summary><div class="s">Выберите, какой отдел какому выдаёт задание и в какой условный день. Оно попадёт в таблицу, перечень заданий и Word, а срок не будет перезаписан регламентом.</div>
+  <div class="g2"><div><label class="f">Кто выдаёт</label><select id="gcf">${fo}</select></div><div><label class="f">Кому</label><select id="gct">${to}</select></div>
+  <div><label class="f">Условный день</label><input type="number" id="gcd" min="0" max="200" value="30"></div>
+  ${cmb?`<div><label class="f">К объекту</label><select id="gcc">${G.comps.map((c,ci)=>`<option value="${ci}">${esc(c.tag||'#'+(ci+1))} · ${esc(c.label||'')}</option>`).join('')}</select></div>`:''}</div>
+  <label class="f">Содержание задания</label><input type="text" id="gcx" placeholder="например: Задание на проём в стене">
+  <div class="bar"><button type="button" class="pri" data-gact="cadd">Добавить в график</button></div></details>`;}
 /* условия, участвующие отделы и сверка с регламентом для одного графика (или одного объекта объединённого графика) */
 function grOptsHtml(G,T,ci){const A=grCI(ci),md=T.mode;let h='';
   const cond=(o,txt)=>`<label class="cr"><input type="checkbox" data-gset="opt" data-o="${o}"${A} ${(T.opt||{})[o]?'checked':''}><span>${txt}</span></label>`;
@@ -2002,17 +2021,17 @@ function vGraph(){
     h+=`<label class="cr"><input type="checkbox" data-gset="tagOn" ${G.tagOn!==false?'checked':''}><span>Помечать в ячейках, к какому объекту относится срок</span></label>
     <div class="s" style="margin-top:8px">Объекты, проектируемые параллельно (например: технология, сети, трансформаторная подстанция, водоснабжение и канализация). Сроки каждого объекта считаются от общего дня 1 (плюс сдвиг), в ячейках они объединяются. Сдачу в ОВП (архив) выдают все участвующие отделы.</div>
     ${G.comps.map((c,ci)=>grCompBlock(G,c,ci,cal)).join('')}
-    <div class="bar"><button class="pri" data-gact="compadd">+ Добавить объект в график</button></div>`;}
+    <div class="bar"><button class="pri" data-gact="compadd">+ Добавить объект в график</button></div>${G.comps.length?grCustomForm(G):''}`;}
   else h+=grOptsHtml(G,G,null);
   h+=`<details><summary>Календарь рабочих дней</summary><div class="s">Праздники РБ (1.01, 7.01, 8.03, Радуница, 1.05, 9.05, 3.07, 7.11, 25.12) учтены автоматически. Переносы выходных добавьте вручную (даты через запятую или пробел).</div>
   <label class="f">Дополнительные нерабочие дни</label><input type="text" data-gset="s.grHol" value="${esc(S.settings.grHol||'')}" placeholder="например 2026-11-09">
   <label class="f">Рабочие субботы/воскресенья</label><input type="text" data-gset="s.grWork" value="${esc(S.settings.grWork||'')}" placeholder="например 2026-11-14"></details>`;
   if(!cmb){const n=G.items.filter(i=>i.inc).length;
-    h+=`<details><summary>Задания (${n} из ${G.items.length}) — снимите галочку с лишних, меняйте условные дни</summary>${G.items.map((it,ix)=>grItemRow(G,it,ix,cal,null)).join('')}</details>`;}
+    h+=`<details><summary>Задания (${n} из ${G.items.length}) — снимите галочку с лишних, меняйте условные дни</summary>${G.items.map((it,ix)=>grItemRow(G,it,ix,cal,null)).join('')}</details>${grCustomForm(G)}`;}
   h+=`<div class="bar"><button data-gact="save">Сохранить</button><button class="pri" data-gact="doc">Скачать Word (.docx)</button><button data-gact="tasks">Задачи ГИПа по графику</button>${S.graphs.some(x=>x.id===G.id)?'<button class="dng" data-gact="del">Удалить</button>':''}</div>
   <h2>Предпросмотр</h2><div id="grprev" style="overflow-x:auto;background:#fff;color:#000;padding:6px;border-radius:6px;min-width:0">${grHtml(G,false)}</div>`;
   return h;}
-function grRefresh(){const G=ui.gr;if(!G)return;const p=$('#grprev');if(p)p.innerHTML=grHtml(G,false);const ge=$('#grend');if(ge)ge.innerHTML=grEndInfo(G);const cal=grCal();
+function grRefresh(){const G=ui.gr;if(!G)return;if(S.graphs.some(x=>x.id===G.id)){try{grTasks(G,true);}catch(e){console.error(e);}}const p=$('#grprev');if(p)p.innerHTML=grHtml(G,false);const ge=$('#grend');if(ge)ge.innerHTML=grEndInfo(G);const cal=grCal();
   const upd=(arr,ci)=>arr.forEach((it,ix)=>{const e=$('#grd'+(ci==null?'':ci+'_')+ix);if(e){const sh=ci==null?0:(+G.comps[ci].shift||0);e.textContent=grDM(grD(G,+it.day>0?+it.day+sh:+it.day,cal));}});
   if(G.mode==='combo')G.comps.forEach((c,ci)=>upd(c.items,ci));else upd(G.items,null);}
 async function grDocx(G){
@@ -2102,6 +2121,12 @@ document.addEventListener('click',e=>{
       c.label=$('#cmlab').value.trim()||(v==='reg'?'Регламент':v==='pre'?'Предпроектная документация':'ГТП-'+v);
       c.tag=($('#cmtag').value.trim()||c.label.replace(/[^А-Яа-яA-Za-z0-9]/g,'').slice(0,4)).toUpperCase().slice(0,6);c.shift=Math.max(0,+$('#cmsh').value||0);
       G.comps.push(c);ui.grDirty=1;if(S.graphs.some(x=>x.id===G.id))grSave(G);dlg.close();render();};dlg.showModal();return;}
+  if(a==='cadd'){const x=($('#gcx').value||'').trim(),f=$('#gcf').value,t=$('#gct').value,d=Math.max(0,+$('#gcd').value||0);
+    if(!x){toast('Впишите содержание задания');return;}
+    const tg=G.mode==='combo'?G.comps[+($('#gcc')||{value:0}).value]:G;if(!tg){toast('Сначала добавьте объект');return;}
+    const it={f:[f==='ГП вер.пл.'?'ГП':f],t:[/^СТРО\d$/.test(t)?'СТРО':t],day:d,mk:'',forms:'',text:x,inc:true,custom:true,man:true,sub:/^СТРО\d$/.test(t)?+t.slice(4):null,row:f==='ГП вер.пл.'?'ГП вер.пл.':null};
+    tg.items.push(it);ui.grDirty=1;if(S.graphs.some(y=>y.id===G.id))grSave(G);render();toast('Задание добавлено: '+f+' → '+t+', у.д. '+d);return;}
+  if(a==='cdel'){const ci=b.dataset.ci!=null?+b.dataset.ci:null,tg=ci!=null?G.comps[ci]:G,ix=+b.dataset.ix;if(tg&&tg.items[ix]&&tg.items[ix].custom&&confirm('Удалить это задание из графика?')){tg.items.splice(ix,1);ui.grDirty=1;if(S.graphs.some(y=>y.id===G.id))grSave(G);render();}return;}
   if(a==='compdel'&&G.mode==='combo'){const ci=+b.dataset.ci;if(G.comps[ci]&&confirm('Убрать объект «'+(G.comps[ci].label||ci+1)+'» из графика?')){G.comps.splice(ci,1);ui.grDirty=1;if(S.graphs.some(x=>x.id===G.id))grSave(G);render();}return;}
   if(a==='back'){if(ui.grDirty&&!S.graphs.some(x=>x.id===G.id))grSave(G);ui.grDirty=0;ui.gr=null;render();}
   else if(a==='save'){grSave(G);ui.grDirty=0;toast('График сохранён');render();}
@@ -2120,7 +2145,7 @@ document.addEventListener('change',e=>{
   const el=e.target,k=el.dataset&&el.dataset.gset;if(!k||!ui.gr)return;const G=ui.gr,ix=+el.dataset.ix,ci=el.dataset.ci!=null?+el.dataset.ci:null,T=ci!=null?G.comps[ci]:G;if(!T)return;
   if(!k.startsWith('s.')){ui.grDirty=1;queueMicrotask(()=>{if(ui.gr===G&&S.graphs.some(x=>x.id===G.id))grSave(G);});} // правки графика сохраняются сразу
   if(k==='inc'){T.items[ix].inc=el.checked;}
-  else if(k==='day'){T.items[ix].day=Math.max(0,+el.value||0);}
+  else if(k==='day'){T.items[ix].day=Math.max(0,+el.value||0);T.items[ix].man=true;}
   else if(k==='sub'){T.items[ix].sub=el.value?+el.value:null;}
   else if(k==='pt'){G.pt=el.checked;}
   else if(k==='tagOn'){G.tagOn=el.checked;}
@@ -3081,7 +3106,8 @@ document.addEventListener('change',e=>{
   if(a==='iqoff'){S.settings.iqoff=!el.checked;save();render();return;}
   if(a==='homen'){S.settings.homeOff=!el.checked;save();render();return;}
   if(a==='shopdone'){const i=S.shop.find(x=>x.id===el.dataset.id);if(i){i.done=el.checked;i.doneAt=el.checked?Date.now():0;save();render();}return;}
-  if(a==='toggle'){const t=S.tasks.find(x=>x.id===el.dataset.id);
+  if(a==='toggle'){if(el.checked&&!el._go){const row=el.closest('.dc,.card,.cr');if(row&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)){el._go=1;row.classList.add('ckdone');setTimeout(()=>{if(document.contains(el))el.dispatchEvent(new Event('change',{bubbles:true}));else{el.checked=false;render();}},560);return;}}
+    const t=S.tasks.find(x=>x.id===el.dataset.id);if(!t)return;
     const hq=+t.spent||+t.est||.5,wasDue=t.due,late=el.checked&&t.repeat&&wasDue&&wasDue<today();
     if(el.checked&&t.repeat){repeatDone(t);save();render();toast('Повторяющаяся задача: следующий раз '+fmt(t.due));if(late)odAsk(t,wasDue,hq);else iqAsk(t,hq);return;}
     if(el.checked)pev(t);t.status=el.checked?'done':'todo';t.doneAt=el.checked?today():'';if(el.checked)lrec(t);save();render();if(el.checked)iqAsk(t,hq);
