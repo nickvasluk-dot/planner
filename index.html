@@ -503,7 +503,7 @@ function kqs(){
   pairs.slice(0,1).forEach(id=>{const [A,B]=id.slice(5).split('|');out.push({id,text:`В одном объекте есть «${A}» и «${B}». Нужно ли закончить «${B}» раньше, чем «${A}»?`,opts:[['yes','Да, «'+B+'» раньше'],['rev','Наоборот: «'+A+'» раньше'],['no','Нет, независимы']]});});
   Object.keys(S.kb.types).forEach(k=>{const v=S.kb.types[k];if(!SMALL(k)&&+v.stake>=2&&v.hd!==undefined&&v.cons===undefined&&cnt[k]){const id='cons:'+k;if(fresh(id))out.push({id,text:`Одной фразой: что конкретно случится, если «${k}» сорвать? Эту фразу я буду добавлять в предупреждения.`,opts:[['set','Написать'],['skip','Пропустить']]});}});
   if(S.settings.otAsked===undefined&&Object.keys(S.kb.types).some(k=>+S.kb.types[k].stake>=2))out.push({id:'ot:q',text:'Если критичный срок горит, готовы ли вы иногда задерживаться после работы? Сколько максимум?',opts:[['0:0','Нет, никогда'],['1:1','До 1 ч, 1 раз в неделю'],['2:2','До 2 ч, 2 раза в неделю'],['3:3','До 3 ч, 3 раза в неделю']]});
-  const rq=[];open.forEach(t=>{const c=t.cp;if(!c||c.k||c.rkd!=='да'||!c.launchId||c.rkdSt==='got'||(c.rkdAsk&&c.rkdAsk>t0))return;
+  const rq=[];open.forEach(t=>{const c=t.cp;if(!c||c.k||c.rkd!=='да'||!(c.launchId||c.r1)||c.rkdSt==='got'||(c.rkdAsk&&c.rkdAsk>t0))return;
     const id='rkd:'+t.id;if(K.snz[id]&&now-K.snz[id]<864e5)return;const r0=c.reqId&&S.tasks.find(x=>x.id===c.reqId);if(r0&&isOpen(r0))return;
     rq.push(r0?{id,text:`Запрос сроков РКД по этапу «${cpShort(t)}» выполнен. РКД предоставлено?`,opts:[['yes','Да, предоставлено'],['wait','Нет, ждём (напомнить через 3 раб. дня)'],['no','Нет, запросить ещё раз']]}
       :{id,text:`Подошёл срок запуска этапа «${cpShort(t)}» (начало ${fmt(t.start)}). Предоставлено ли РКД?`,opts:[['yes','Да, предоставлено'],['no','Нет'],['part','Частично']]});});
@@ -829,7 +829,7 @@ S.pend=S.pend||[];S.learn.rec=S.learn.rec||[];
 function rec(k,v){S.learn.rec=S.learn.rec.concat([{k,v,ts:Date.now()}]).slice(-300);}
 function newRisksCount(){return S.tasks.filter(t=>isOpen(t)&&isWork(t)&&!isHome(t)&&t.due&&diff(t.due,today())>=0&&diff(t.due,today())<=7&&riskOf(t).lvl===3).length;}
 function risksList(){
-  const t0=today(),out=[],open=S.tasks.filter(t=>isOpen(t)&&isWork(t)&&!isHome(t)),byDue=(a,b)=>(a.due||'9999')<(b.due||'9999')?-1:1;
+  const t0=today(),out=[],open=S.tasks.filter(t=>isOpen(t)&&isWork(t)&&!isHome(t)&&!holdNow(t,t0)),byDue=(a,b)=>(a.due||'9999')<(b.due||'9999')?-1:1;
   const push=(lvl,title,text,tasks,acts)=>out.push({lvl,title,text,tasks:tasks.slice(0,4),acts:acts||[]});
   const used=new Set();
   open.filter(t=>t.due&&diff(t.due,t0)<=14&&riskOf(t).lvl===3&&!unavail(t)).sort(byDue).slice(0,8).forEach(t=>{used.add(t.id);
@@ -1099,6 +1099,7 @@ function scoreParts(t){
   P.total=P.imp+P.urg+P.cons+P.infl+P.doing;return P;}
 function scoreBase(t){if(isClosed(t))return -1;return scoreParts(t).total;}
 const byScore=(a,b)=>score(b)-score(a);
+function holdNow(t,t0){t0=t0||today();return !!(isOpen(t)&&t.hold&&diff(t.hold,t0)>0&&(t.hp||!(t.due&&diff(t.due,t0)<=0)));}
 function notYet(t,t0){if(t.hold&&diff(t.hold,t0)>0&&(t.hp||!(t.due&&diff(t.due,t0)<=0)))return true;return !!(t.start&&diff(t.start,t0)>0&&!(t.due&&diff(t.due,t0)<=0));}
 /* список дня: kind='work' | 'home'; в план попадает то, что помещается в доступные часы (срок «сегодня» — всегда) */
 function planDay(kind){
@@ -1115,7 +1116,7 @@ function planDay(kind){
   });
   day.sort((a,b)=>{const ta=tmOk(a)&&tmDay(a)===t0,tb=tmOk(b)&&tmDay(b)===t0;return ta&&tb?tmMin(a)-tmMin(b):ta?-1:tb?1:0;});
   later.sort((a,b)=>(a.start||'').localeCompare(b.start||''));
-  const od=open.filter(t=>t.due&&diff(t.due,t0)<0);
+  const od=open.filter(t=>t.due&&diff(t.due,t0)<0&&!holdNow(t,t0));
   const odH=od.reduce((s,t)=>s+rem(t),0);
   return {day,reserve,later,used:Math.round(used*10)/10,cap,overN:od.length,overH:Math.round(odH*10)/10};
 }
@@ -1140,7 +1141,7 @@ function reserveFrac(){const v=S.settings.resv;if(v!==undefined&&v!==''&&v!==nul
 function planBlocks(opt){
   opt=opt||{};
   const t0=today(),nm=opt.now!=null?opt.now:nowMin(),lost=opt.lost!=null?opt.lost:(dayLog().lost||0);
-  const timed=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&entOf(t)==='task'&&tmOk(t)&&tmDay(t)===t0&&!unavail(t)&&rem(t)>0.01),timedIds=new Set(timed.map(t=>t.id));
+  const timed=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&entOf(t)==='task'&&tmOk(t)&&tmDay(t)===t0&&!unavail(t)&&!holdNow(t,t0)&&rem(t)>0.01),timedIds=new Set(timed.map(t=>t.id));
   const work=S.tasks.filter(t=>isOpen(t)&&isWork(t)&&!unavail(t)&&!isHome(t)&&!notYet(t,t0)&&rem(t)>0.01&&!timedIds.has(t.id));
   const meet=meetDays().includes(dt(t0).getDay());
   const meets=S.tasks.filter(t=>isOpen(t)&&entOf(t)==='meeting'&&t.mt&&(t.due===t0||(t.dly&&dlyOn(t,t0)&&diff(t0,t.due)>0))).map(t=>{const m=(t.due===t0?t.mt:(t.mt0||t.mt)).match(/(\d+):(\d+)-(\d+):(\d+)/);return m?{from:+m[1]*60+ +m[2],to:+m[3]*60+ +m[4],title:t.title}:null;}).filter(Boolean);
@@ -1190,7 +1191,7 @@ function missedList(){
   getBlocks().forEach((b,i)=>{
     if(b.to>nm)return;
     (L.plan0[i]||[]).forEach(a=>{
-      const t=S.tasks.find(x=>x.id===a[0]);if(!t||isClosed(t)||seen.has(t.id))return;
+      const t=S.tasks.find(x=>x.id===a[0]);if(!t||isClosed(t)||seen.has(t.id)||holdNow(t,t0))return;
       if(t.repeat&&t.due&&diff(t.due,t0)>0)return;
       const prog=Math.max(0,(+t.spent||0)-a[2]);if(prog>=a[1]-0.05)return;
       seen.add(t.id);out.push({t,from:b.from,miss:Math.round((a[1]-prog)*100)/100,i});
@@ -1201,7 +1202,7 @@ function missedList(){
 const critTypes=()=>String(S.settings.critTypes||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
 function criticalList(){
   const t0=today(),ct=critTypes();
-  return S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&t.due&&diff(t.due,t0)<=Math.max(1,leadOf(t))&&!(t.wait&&diff(t0,t.wait)<3)&&(ct.includes((t.type||'').toLowerCase())||(+t.imp)===3)).sort(byScore);
+  return S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&!holdNow(t,t0)&&t.due&&diff(t.due,t0)<=Math.max(1,leadOf(t))&&!(t.wait&&diff(t0,t.wait)<3)&&(ct.includes((t.type||'').toLowerCase())||(+t.imp)===3)).sort(byScore);
 }
 
 /* ---------- напоминания ---------- */
@@ -1308,7 +1309,7 @@ function intrView(){
   return h+ins.map(x=>`<div class="s" style="margin:6px 0">💡 ${esc(x)}</div>`).join('');}
 function sumDlg(k){
   const t0=today(),wke=isWkEnd(t0),open=S.tasks.filter(t=>isOpen(t)&&(wke?isHome(t):!isHome(t)));let title,rows;
-  if(k==='ow'){title='Просрочено';rows=open.filter(t=>t.due&&diff(t.due,t0)<0).sort((a,b)=>a.due<b.due?-1:1).map(t=>[t,(-diff(t.due,t0))+' дн.']);}
+  if(k==='ow'){title='Просрочено';rows=open.filter(t=>t.due&&diff(t.due,t0)<0&&!holdNow(t,t0)).sort((a,b)=>a.due<b.due?-1:1).map(t=>[t,(-diff(t.due,t0))+' дн.']);}
   else if(k==='day'){title='На сегодня';rows=planDay(wke?'home':'work').day.map(t=>[t,t.due?(diff(t.due,t0)<0?'срок '+fmt(t.due)+' (просрочена)':diff(t.due,t0)===0?'срок сегодня':'срок '+fmt(t.due)):'']);}
   else{title='Сроки на 7 дней';rows=open.filter(t=>t.due&&diff(t.due,t0)>=0&&diff(t.due,t0)<=7).sort((a,b)=>a.due<b.due?-1:1).map(t=>[t,DOWN[dt(t.due).getDay()]+' '+fmt(t.due).slice(0,5)]);}
   dlg.onchange=null;dlg.onclose=null;
@@ -1380,6 +1381,7 @@ function tick(){
   try{rollDaily();}catch(e){console.error(e);}
   try{shopClean();}catch(e){}
   try{cpTick();}catch(e){console.error(e);}
+  setTimeout(()=>{try{cpCleanup();}catch(e){console.error(e);}},600);
   const nm=nowMin(),now=new Date(),dow=now.getDay(),workday=dow>=1&&dow<=5,t0=today();
   parseRemind(S.settings.remind).forEach(r=>{
     if(r.days?!r.days.includes(dow):!workday)return;
@@ -1444,7 +1446,7 @@ function makeIcs(){
 /* ---------- разбор накопленного (1С, бумаги): по одной задаче ---------- */
 function triageQueue(){
   const t0=today(),skip=ui.trSkip||[];
-  return S.tasks.filter(t=>isOpen(t)&&!skip.includes(t.id)&&(!t.due||diff(t.due,t0)<-30||(t.type||'')==='Входящие'))
+  return S.tasks.filter(t=>isOpen(t)&&!holdNow(t,t0)&&!skip.includes(t.id)&&(!t.due||diff(t.due,t0)<-30||(t.type||'')==='Входящие'))
     .sort((a,b)=>((b.type==='Входящие')-(a.type==='Входящие'))||(a.due||'').localeCompare(b.due||''));
 }
 function triageShow(){
@@ -1507,7 +1509,7 @@ function dayCard(t){
   const p=proj(t.project),t0=today(),lv=dayLevel(t);let when='';
   if(isOpen(t)&&t.due){const d=diff(t.due,t0);when=d<0?`<span class="r">просрочено на ${-d} дн.</span>`:d===0?'<b>срок сегодня</b>':'срок '+fmt(t.due);}
   const cm=t.cm||(isOpen(t)&&isWork(t)&&!isHome(t)&&typeof consOf==='function'?consOf(t):'')||'';
-  const meta=[t.tm&&isOpen(t)?'<b>⏰ '+esc(t.tm)+(tmDay(t)&&tmDay(t)!==t0?' ('+fmt(tmDay(t)).slice(0,5)+')':'')+'</b>':'',when,isHome(t)?'🏠 дом':'',t.repeat?'🔁 '+REPEAT[t.repeat]:'',p?esc(p.name):'',t.est?(t.spent?'осталось '+rem(t)+' из '+t.est+' ч':t.est+' ч'):'',['wait','block'].includes(t.status)?'⏳ '+stName(t.status):'',blockedBy(t).length&&isOpen(t)?'⛓ ждёт «'+esc(blockedBy(t)[0].title.slice(0,24))+'»':''].filter(Boolean).join(' · ');
+  const meta=[t.tm&&isOpen(t)?'<b>⏰ '+esc(t.tm)+(tmDay(t)&&tmDay(t)!==t0?' ('+fmt(tmDay(t)).slice(0,5)+')':'')+'</b>':'',when,isHome(t)?'🏠 дом':'',t.repeat?'🔁 '+REPEAT[t.repeat]:'',p?esc(p.name):'',t.est?(t.spent?'осталось '+rem(t)+' из '+t.est+' ч':t.est+' ч'):'',holdNow(t,t0)?'<b>⏳ отложено до '+fmt(t.hold)+'</b>':'',['wait','block'].includes(t.status)?'⏳ '+stName(t.status):'',blockedBy(t).length&&isOpen(t)?'⛓ ждёт «'+esc(blockedBy(t)[0].title.slice(0,24))+'»':''].filter(Boolean).join(' · ');
   return `<div class="dc ${lv} ${isClosed(t)?'done':''}"><input type="checkbox" data-act="toggle" data-id="${t.id}" ${isClosed(t)?'checked':''}>
   <div class="grow" data-act="edit" data-id="${t.id}"><div class="t">${esc(t.title)}</div>${cm?`<div class="cm">${esc(cm)}</div>`:''}<div class="mt">${meta}</div></div>
   ${isOpen(t)?`<div class="ac"><button data-act="tpost" data-id="${t.id}" title="Отложить">⏳ Отложить</button><button data-act="tmore" data-id="${t.id}" title="Ещё">⋯</button></div>`:''}</div>`;
@@ -1522,6 +1524,7 @@ function card(t){
   const bb=blockedBy(t);if(bb.length&&isOpen(t))badge+='<span class="b" title="Сначала: '+esc(bb.map(x=>x.title).join('; '))+'">⛓ ждёт «'+esc(bb[0].title.slice(0,24))+'»</span>';
   if(entOf(t)!=='task')badge+='<span class="b">'+(ENT.find(x=>x[0]===entOf(t))||[0,''])[1]+'</span>';
   if(isOpen(t)&&isWork(t)&&!isHome(t)){const rk=riskOf(t);if(rk.lvl===3)badge+='<span class="b red" title="'+esc(rk.text)+'">риск срыва</span>';else if(rk.lvl===2)badge+='<span class="b orange" title="'+esc(rk.text)+'">риск</span>';}
+  if(holdNow(t,t0))badge+='<span class="b orange">⏳ до '+fmt(t.hold)+'</span>';
   const ja=ladj(t);if(ja>=8)badge+='<span class="b" title="Поднята по вашим привычкам">↑</span>';else if(ja<=-8)badge+='<span class="b" title="Опущена по вашим привычкам">↓</span>';
   return `<div class="card ${t.status}"><input type="checkbox" data-act="toggle" data-id="${t.id}" ${isClosed(t)?'checked':''}>
   <div class="grow" data-act="edit" data-id="${t.id}"><div class="t">${esc(t.title)}</div>
@@ -1577,7 +1580,7 @@ function vToday(){
   const t0=today(),P=planDay('work');
   const open=S.tasks.filter(t=>isOpen(t));
   const wke=isWkEnd(t0),HP=wke?planDay('home'):P,hm_=wke?(t=>isHome(t)):(t=>!isHome(t));
-  const ow=open.filter(t=>hm_(t)&&t.due&&diff(t.due,t0)<0).length;
+  const ow=open.filter(t=>hm_(t)&&t.due&&diff(t.due,t0)<0&&!holdNow(t,t0)).length;
   const week=open.filter(t=>hm_(t)&&t.due&&diff(t.due,t0)>=0&&diff(t.due,t0)<=7).length;
   const stale=open.filter(t=>t.due&&diff(t.due,t0)<-30).length;
   const cl0=callsToday();
@@ -1622,13 +1625,13 @@ function vToday(){
     h+=`<h2>План на ${fmt(t0)} · ${P.used} из ${P.cap} ч</h2>`;
     h+=P.day.length?P.day.map(dayCard).join(''):'<div class="empty">На сегодня задач нет 🎉</div>';
     if(P.reserve.length){h+=`<h2><a href="#" data-act="reserve" style="color:inherit">Резерв (${P.reserve.length}) ${ui.reserve?'▾':'▸'}</a></h2>`;if(ui.reserve)h+=P.reserve.map(dayCard).join('');}
-    if(P.later.length)h+=`<details><summary>Ещё не начались (${P.later.length})</summary>${P.later.map(dayCard).join('')}</details>`;
+    {const lt=P.later.filter(t=>!holdNow(t,t0));if(lt.length)h+=`<details><summary>Ещё не начались (${lt.length})</summary>${lt.map(dayCard).join('')}</details>`;}
   }
-  {const odAll=open.filter(t=>hm_(t)&&t.due&&diff(t.due,t0)<0&&!SHOWN.has(t.id)).sort((a,b)=>a.due<b.due?-1:1);
+  {const odAll=open.filter(t=>hm_(t)&&t.due&&diff(t.due,t0)<0&&!holdNow(t,t0)&&!SHOWN.has(t.id)).sort((a,b)=>a.due<b.due?-1:1);
     if(odAll.length)h+=`<div class="crit" style="margin-top:8px"><b>Просрочено, не вошло в план дня (${odAll.length})</b><div class="s">Эти задачи считаются в кнопке «просрочено», но в план на сегодня не попали (ждут данные, без оценки времени, другой тип и т. п.).</div>${odAll.map(t=>dayCard(t)).join('')}</div>`;}
   if(STAGE<3){const rl=risksList();if(rl.length)h+=`<details><summary>Риски по срокам (${rl.length})</summary>${riskView()}</details>`;}
-  const pp=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&t.hold&&t.hold>t0&&t.mvd===t0&&!t.repeat);
-  if(pp.length)h+=`<details style="margin-top:8px"><summary>⏳ Отложено сегодня (${pp.length})</summary>${pp.map(t=>`<div class="cr"><span class="grow s">${esc(t.title)} — до ${fmt(t.hold)}${t.due&&t.due<=t0?' <span class="b red">срок '+(t.due<t0?'прошёл':'сегодня')+'</span>':''}</span><button data-act="tunhold" data-id="${t.id}">Вернуть</button></div>`).join('')}</details>`;
+  const pp=S.tasks.filter(t=>isOpen(t)&&!isHome(t)&&t.hold&&t.hold>t0&&(t.hp||t.mvd===t0)&&!t.repeat&&!isCallT(t));
+  if(pp.length)h+=`<details style="margin-top:8px"><summary>⏳ Отложено (${pp.length}) — вернутся в план в указанный день</summary>${pp.map(t=>`<div class="cr"><span class="grow s">${esc(t.title)} — до ${fmt(t.hold)}${t.due&&t.due<=t0?' <span class="b red">срок '+(t.due<t0?'прошёл':'сегодня')+'</span>':''}</span><button data-act="tunhold" data-id="${t.id}">Вернуть</button></div>`).join('')}</details>`;
   if(weekend)return head0+`<div class="warn">Сегодня выходной: показаны только бытовые дела. Рабочее свёрнуто ниже.</div>`+homeSection()+`<div class="bar"><button data-tab="buy">🛒 Список покупок${S.shop.filter(i=>!i.done).length?' ('+S.shop.filter(i=>!i.done).length+')':''}</button></div><details style="margin-top:10px"><summary>💼 Рабочее на сегодня (звонки, сигналы, план)</summary>${h}</details>`;
   const hn=planDay('home').day.length;
   return head0+h+`<details style="margin-top:10px" ${offHours()?'open':''}><summary><b>🏠 Дом</b> · на сегодня: ${hn}</summary>${homeSection()}</details>`;
@@ -2503,20 +2506,21 @@ function parseCalPlan(rows,h){
   const ok=it=>!it.cond&&!it.rel;
   for(let i=out.length-2;i>=0;i--){const x=out[i],n=out[i+1];if(ok(x)&&!x.start&&!x.end&&x.dur&&ok(n)&&n.start&&x.stage===n.stage){x.end=addDays(n.start,-1);x.start=addDays(x.end,-x.dur+1);x.calc=true;}}
   for(let i=1;i<out.length;i++){const x=out[i],p=out[i-1];if(ok(x)&&!x.start&&x.dur&&ok(p)&&p.end&&x.stage===p.stage){x.start=addDays(p.end,1);x.end=addDays(x.start,x.dur-1);x.calc=true;}}
-  out.forEach(it=>{it.inc=!it.cond&&!it.rel&&!!(it.end||it.start);});
+  const lim=addDays(today(),-3);
+  out.forEach(it=>{it.inc=!it.cond&&!it.rel&&!!(it.end||it.start);it.old=!!((it.end||it.start)&&(it.end||it.start)<lim);if(it.old)it.inc=false;});
   return out;}
 function renderCalImport(){
   const c=imp.cal;dlg.onclose=null;
   const so=(v,cur,l)=>`<option value="${v}" ${v===cur?'selected':''}>${l}</option>`;
   dlg.innerHTML=`<h3>Календарный план: проверьте разбор</h3>
-  <div class="s">Распознано позиций: <b>${c.length}</b>. Этап — это работа с началом и окончанием в соседних строках; недостающие даты ≈ рассчитаны по длительности (столбец «Дни»). Позиции «по доп. соглашению», «при необходимости» и без срока по умолчанию не включены: отметьте их, если нужны.</div>
+  <div class="s">Распознано позиций: <b>${c.length}</b>. Этап — это работа с началом и окончанием в соседних строках; недостающие даты ≈ рассчитаны по длительности (столбец «Дни»). По умолчанию берутся только этапы, срок которых ещё не наступил или наступил не более 3 дней назад (остальные, <b>${c.filter(x=>x.old).length}</b>, не отмечены). Позиции «по доп. соглашению», «при необходимости» и без срока тоже не включены: отметьте их, если нужны.</div>
   <label class="f">Объект</label><input type="text" data-ci="pname" value="${esc(imp.pname||'')}">
   <div style="overflow-x:auto"><table class="pv"><tr><th></th><th>№</th><th>Этап</th><th>Начало</th><th>Окончание</th><th>Вид</th><th>Нужна РКД?</th></tr>
-  ${c.map((it,i)=>`<tr><td><input type="checkbox" data-ci="${i}" data-cf="inc" ${it.inc?'checked':''}></td><td>${esc(it.num)}</td><td style="min-width:200px">${esc(it.title.slice(0,110))}${it.rel?'<div class="s" style="color:var(--org)">'+esc(it.rel)+'</div>':''}${it.cond&&!it.rel?'<div class="s" style="color:var(--org)">при необходимости</div>':''}</td>
+  ${c.map((it,i)=>`<tr><td><input type="checkbox" data-ci="${i}" data-cf="inc" ${it.inc?'checked':''}></td><td>${esc(it.num)}</td><td style="min-width:200px">${esc(it.title.slice(0,110))}${it.rel?'<div class="s" style="color:var(--org)">'+esc(it.rel)+'</div>':''}${it.cond&&!it.rel?'<div class="s" style="color:var(--org)">при необходимости</div>':''}${it.old?'<div class="s" style="color:var(--org)">срок прошёл более 3 дней назад: не добавляется</div>':''}</td>
   <td><input type="date" data-ci="${i}" data-cf="start" value="${it.start}">${it.calc?'<div class="s">≈ расчёт</div>':''}</td><td><input type="date" data-ci="${i}" data-cf="end" value="${it.end}"></td>
   <td><select data-ci="${i}" data-cf="type">${CP_TYPES.map(x=>so(x[0],it.type,x[1])).join('')}</select></td>
   <td><select data-ci="${i}" data-cf="rkd">${so('да',it.rkd,'Да')}${so('нет',it.rkd,'Нет')}</select></td></tr>`).join('')}</table></div>
-  <p class="s">Для «Разработки проектной документации» по умолчанию «РКД: да». Для этапов, требующих РКД, за ${cpLead()} раб. дней до начала появится задача запуска и вопрос «Предоставлено ли РКД?». Срок «Рассмотрения Заказчиком» отсчитывается от фактической передачи (выполненной задачи «Передать Заказчику / выставить акт»). Файл читается на устройстве.</p>
+  <p class="s">Для «Разработки проектной документации» по умолчанию «РКД: да». По каждому этапу будет два напоминания: за 7 дней до начала и в день начала (текст зависит от вида этапа). Для этапов, требующих РКД, появится вопрос «Предоставлено ли РКД?». Срок «Рассмотрения Заказчиком» отсчитывается от фактической передачи (выполненной задачи «Передать Заказчику / выставить акт»). Файл читается на устройстве.</p>
   <div class="row"><button data-act="impcancel">Отмена</button><button data-act="calplain">Как обычную таблицу</button><button class="pri" data-act="calgo">Добавить в план</button></div>`;
   dlg.onchange=e=>{const el=e.target,i=el.dataset.ci;if(i===undefined)return;if(i==='pname'){imp.pname=el.value;return;}
     const it=imp.cal[+i],f=el.dataset.cf;if(f==='inc')it.inc=el.checked;else it[f]=el.value;};
@@ -2534,7 +2538,7 @@ function calOverdueAsk(L){
   if(!dlg.open)dlg.showModal();}
 function runCalImport(){
   const od=calOverdue();if(od.length){calOverdueAsk(od);return;}
-  const c=imp.cal.filter(x=>x.inc),fname=imp.fname,t0=today();let add=0,upd=0,pend=0,closed=0;
+  const c=imp.cal.filter(x=>x.inc),skipOld=imp.cal.filter(x=>x.old&&!x.inc).length,fname=imp.fname,t0=today();let add=0,upd=0,pend=0,closed=0;
   const pn=(imp.pname||'').trim()||'Объект';let pr=S.projects.find(x=>x.name.toLowerCase()===pn.toLowerCase());
   if(!pr){pr={id:uid(),name:pn,contract:'',customer:'',recipient:'',recipientPos:''};S.projects.push(pr);}const pid=pr.id;
   const made=[];
@@ -2555,8 +2559,37 @@ function runCalImport(){
   S.settings.cpLead=S.settings.cpLead||10;
   try{cpTick();}catch(e){console.error(e);}
   const back=imp.fromObj&&S.projects.find(x=>x.id===pid);save();imp=null;dlg.onchange=null;dlg.close();if(back){tab='proj';ui.po=back.id;}else tab='plan';render();
-  info('Календарный план добавлен',`<div>Этапов добавлено: <b>${add}</b>${closed?` (из них отмечено выполненными: <b>${closed}</b>)`:''}, обновлено: <b>${upd}</b>.${pend?` Изменений сроков, ждущих вашего решения: <b>${pend}</b>.`:''}</div><div class="s" style="margin-top:6px">Задачи запуска появятся за ${cpLead()} раб. дней до начала этапа. Для этапов с РКД будет задан вопрос «Предоставлено ли РКД?».</div>`);}
+  info('Календарный план добавлен',`<div>Этапов добавлено: <b>${add}</b>${closed?` (из них отмечено выполненными: <b>${closed}</b>)`:''}, обновлено: <b>${upd}</b>.${pend?` Изменений сроков, ждущих вашего решения: <b>${pend}</b>.`:''}</div><div class="s" style="margin-top:6px">Напоминания появятся за 7 дней до начала этапа и в день начала. Для этапов с РКД будет задан вопрос «Предоставлено ли РКД?».</div>${skipOld?`<div class="s">Не добавлено этапов, срок которых прошёл более 3 дней назад: ${skipOld}.</div>`:''}`);}
 function cpMk(t,k,title,tpl,docv,note,type,due){const x={id:uid(),title,kind:'work',type,project:t.project,section:t.section||'',start:'',due,imp:3,est:0.5,status:'todo',resp:'',note,repeat:'',src:'авто: календарный план',tpl,docv,cp:{k,of:t.id}};S.tasks.push(x);return x;}
+const prevWd=d=>{let x=d;while([0,6].includes(dt(x).getDay()))x=addDays(x,-1);return x;};
+/* текст напоминаний зависит от вида этапа: k=1 — за 7 дней до начала, k=2 — в день начала */
+const CP_REM={
+ dev:['Подготовиться к началу разработки','Начать разработку','Проверьте исходные данные, задания смежных отделов и загрузку исполнителей','Работа начинается сегодня: убедитесь, что она запущена и исполнители знают срок'],
+ dev2:['Подготовить разработку сметы / ПОС','Начать разработку сметы / ПОС','Проверьте, что объёмы работ и исходные данные от отделов переданы сметчикам','Работа начинается сегодня: убедитесь, что объёмы получены и работа запущена'],
+ review:['Скоро рассмотрение Заказчиком','Начался срок рассмотрения Заказчиком','Убедитесь, что документация передана Заказчику (письмо, акт): от даты передачи считается срок рассмотрения','Контролируйте ответ Заказчика; при задержке направьте письмо-напоминание'],
+ rework:['Подготовиться к доработке по замечаниям','Приступить к доработке по замечаниям','Соберите замечания Заказчика / экспертизы и распределите их по отделам','Доработка начинается сегодня: замечания должны быть у исполнителей'],
+ issue:['Подготовить выдачу Заказчику','Выдать Заказчику сегодня','Подготовьте комплект, сопроводительное письмо или акт приёма-передачи','Выдача по плану сегодня: отправьте и зафиксируйте дату передачи'],
+ mon:['Подготовить запрос / мониторинг','Отправить запрос или проверить ответ','Подготовьте запрос исходных данных и список адресатов','Сегодня по плану запрос или проверка ответа: напомните тем, кто не ответил'],
+ exp:['Подготовиться к экспертизе','Экспертиза началась','Проверьте комплектность документации и готовность ответов на замечания','Экспертиза идёт по плану: держите на связи исполнителей для ответов на замечания'],
+ sur:['Подготовить изыскания / обследование','Начались изыскания / обследование','Проверьте задание, допуск на объект и договорённости с исполнителем','Работы начинаются сегодня: подтвердите выход исполнителя и сроки отчёта'],
+ other:['Скоро начало этапа','Сегодня начало этапа','Проверьте, всё ли готово к началу','Этап начинается сегодня']};
+function cpRem(t,k){const c=t.cp,R=CP_REM[c.type]||CP_REM.other,st=t.start||t.due,en=t.due||t.start;
+  const title=R[k===1?0:1]+': '+c.num+' '+cpShort(t);
+  let note=(k===1?'Через 7 дней (начало '+fmt(st)+'). ':'Начало этапа '+fmt(st)+(en&&en!==st?', окончание '+fmt(en):'')+'. ')+R[k===1?2:3]+'.';
+  if(c.rkd==='да'&&k===1)note+=' Проверьте, предоставлена ли РКД.';
+  return {title,note};}
+/* разовая чистка после перехода на новые правила: этапы со сроком старше 3 дней и массовые задачи запуска */
+function cpCleanup(){if(S.settings.cpCl2)return;const t0=today(),lim=addDays(t0,-3);
+  const stale=S.tasks.filter(t=>t.cp&&!t.cp.k&&isOpen(t)&&(t.due||t.start)&&(t.due||t.start)<lim&&!(+t.spent)&&!t.doneAt);
+  const ids=new Set(stale.map(t=>t.id));
+  const aux=S.tasks.filter(t=>t.cp&&t.cp.k&&isOpen(t)&&(ids.has(t.cp.of)||t.cp.k==='launch'));
+  if(!stale.length&&!aux.length){S.settings.cpCl2=1;save();return;}
+  const ok=confirm('Из календарных планов в списке накопились: этапов со сроком старше 3 дней — '+stale.length+', старых задач запуска — '+aux.filter(t=>t.cp.k==='launch').length+'. Убрать их? Вместо задач запуска будут приходить напоминания за 7 дней и в день начала.');
+  S.settings.cpCl2=1;
+  if(ok){const rm=new Set(stale.map(t=>t.id).concat(aux.map(t=>t.id)));
+    S.tasks.forEach(t=>{if(t.cp&&!t.cp.k&&t.cp.launchId&&rm.has(t.cp.launchId))delete t.cp.launchId;});
+    S.tasks=S.tasks.filter(t=>!rm.has(t.id));try{cpTick();}catch(e){console.error(e);}toast('Убрано задач: '+rm.size);}
+  save();render();}
 function cpTick(){
   const t0=today(),L=cpLead();let ch=false;const by=id=>S.tasks.find(x=>x.id===id);
   S.tasks.slice().forEach(t=>{const c=t.cp;if(!c||c.k||!isOpen(t))return;
@@ -2564,7 +2597,10 @@ function cpTick(){
       if(h&&h.status==='done'&&h.doneAt&&c.from!==h.doneAt){const d=c.dur||14;if(c.due0===undefined)c.due0=t.due;c.from=h.doneAt;t.start=addDays(h.doneAt,1);t.due=addDays(h.doneAt,d);
         t.note=(t.note?t.note+'\n':'')+'Срок рассмотрения пересчитан от фактической передачи '+fmt(h.doneAt)+' ('+d+' дн.): до '+fmt(t.due)+(c.due0&&c.due0!==t.due?' (по плану было до '+fmt(c.due0)+')':'')+'.';ch=true;}}
     if(c.type==='review'&&t.due&&t.due<t0&&!c.ctl){const x=cpMk(t,'rvctl','Узнать у Заказчика статус рассмотрения: '+c.num+' '+cpShort(t),'req',{'документ':'ответ по рассмотрению: '+cpShort(t)},'Срок рассмотрения Заказчиком истёк '+fmt(t.due)+'.','Письмо',t0);c.ctl=x.id;ch=true;}
-    if(!c.launchId&&!c.cond&&CP_LAUNCH.includes(c.type)&&t.start&&backWd(t.start,L)<=t0){
+    {const st=t.start||t.due;if(st&&!c.cond){const d1=prevWd(addDays(st,-7)),d2=prevWd(st);
+      [[1,d1,!c.r1&&!c.launchId&&t0>=d1&&t0<d2],[2,d2,!c.r2&&t0>=d2&&t0<=addDays(st,3)]].forEach(([k,dd,ok])=>{if(!ok)return;const R=cpRem(t,k),x=cpMk(t,'rem'+k,R.title,'',null,R.note,'',t0);x.est=0.25;
+        c[k===1?'r1':'r2']=x.id;ch=true;try{addAlert('cp'+k+':'+t.id,R.title,true);}catch(e){}});}}
+    if(false&&!c.launchId&&!c.cond&&CP_LAUNCH.includes(c.type)&&t.start&&backWd(t.start,L)<=t0){
       const lb=backWd(t.start,5),x=cpMk(t,'launch','Запустить работы: '+c.num+' '+cpShort(t),'',null,'Автозадача по календарному плану: этап начинается '+fmt(t.start)+'. Запускать не позднее чем за 5 раб. дней до начала (лучше за '+L+'), чтобы был запас на перенос.','',lb>t0?lb:t0);delete x.tpl;delete x.docv;
       c.launchId=x.id;ch=true;try{addAlert('cp:'+t.id,'Подходит срок запуска этапа «'+cpShort(t)+'» (начало '+fmt(t.start)+')',true);}catch(e){}}
   });
@@ -3023,7 +3059,7 @@ document.addEventListener('click',e=>{
   else if(a==='thot'||a==='tcold'){if(task){if(a==='thot')task.hot=1;else delete task.hot;dlg.close();save();render();}}
   else if(a==='tpost'){if(task){const t0=today(),late=task.due&&task.due<=t0,call=isCallT(task)&&!isHome(task);
     dlg.onchange=null;dlg.onclose=null;
-    dlg.innerHTML=`<form method="dialog"><h3>Отложить</h3><div class="s">${esc(task.title.slice(0,90))}</div>${late?`<div class="warn">Срок задачи ${task.due<t0?'уже прошёл':'сегодня'} (${fmt(task.due)}). Задача уйдёт из плана дня, но останется в «Отложено сегодня», в просроченных и в критичных сроках.</div>`:''}${call?(+task.imp>=3?'<div class="warn">Важность звонка уже максимальная, поэтому он больше не переносится: позвоните или отметьте выполненным. Если нужно изменить срок насовсем, откройте звонок и измените дату.</div>':'<div class="s">Звонок: можно перенести на любой рабочий день. При переносе важность вырастет на 1; на максимальной важности звонок больше не переносится.</div>'):''}
+    dlg.innerHTML=`<form method="dialog"><h3>Отложить</h3><div class="s">${esc(task.title.slice(0,90))}</div>${late?`<div class="warn">Срок задачи ${task.due<t0?'уже прошёл':'сегодня'} (${fmt(task.due)}). Задача уйдёт из плана дня, из просроченных и критичных; вернётся в план в выбранный день (её можно вернуть раньше в разделе «Отложено»).</div>`:''}${call?(+task.imp>=3?'<div class="warn">Важность звонка уже максимальная, поэтому он больше не переносится: позвоните или отметьте выполненным. Если нужно изменить срок насовсем, откройте звонок и измените дату.</div>':'<div class="s">Звонок: можно перенести на любой рабочий день. При переносе важность вырастет на 1; на максимальной важности звонок больше не переносится.</div>'):''}
     <div class="bar" style="flex-direction:column;align-items:stretch"><button type="button" data-act="tpd" data-id="${task.id}" data-n="1">На следующий рабочий день (${fmt(addWd(t0,1))})</button><button type="button" data-act="tpd" data-id="${task.id}" data-n="2">Через 2 рабочих дня (${fmt(addWd(t0,2))})</button><button type="button" data-act="tpd" data-id="${task.id}" data-n="5">Через неделю (${fmt(addWd(t0,5))})</button>
     <div class="g2"><input type="date" id="tpdate" min="${addDays(t0,1)}"><button type="button" data-act="tpd" data-id="${task.id}" data-n="d">На выбранную дату</button></div></div><div class="row"><button value="cancel">Отмена</button></div></form>`;dlg.showModal();}}
   else if(a==='tpd'){if(task){const t0=today();let d=b.dataset.n==='d'?($('#tpdate').value||''):addWd(t0,+b.dataset.n);if(!d||d<=t0){toast('Выберите дату позже сегодняшней');return;}d=wdSnap(d);
