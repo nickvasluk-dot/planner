@@ -659,35 +659,36 @@ function taskOptions(t){return `<div class="bar"><button data-act="tdefer" data-
 const isCallT=t=>(t.type||'').trim().toLowerCase()==='звонок';
 const isWkEnd=d=>[0,6].includes(dt(d).getDay());
 const wdSnap=d=>{if(!d)return d;let x=d;while(isWkEnd(x))x=addDays(x,1);return x;};
-function callBoost(t){t.mv=(t.mv||0)+1;t.mvd=today();if(+t.imp<3){t.imp0=t.imp0||+t.imp;t.imp=(+t.imp||2)+1;return 'up';}return 'max';}
-function callDeferMsg(t){return t.hold?'Звонок перенесён на '+fmt(t.hold)+', важность повышена до '+t.imp+' из 3 (переносов: '+(t.mv||0)+')':'Звонок уже максимальной важности — больше не переносится. Он остаётся в списке на сегодня: позвоните или отметьте выполненным.';}
+function callBoost(t){t.mv=(t.mv||0)+1;t.mvd=today();t.imp0=t.imp0||+t.imp||2;t.imp=Math.round(((+t.imp||2)+0.1)*10)/10;return 'up';}
+const impTxt=v=>String(Math.round((+v||0)*10)/10).replace('.',',');
+function callDeferMsg(t){return t.hold?'Звонок перенесён на '+fmt(t.hold)+', важность повышена до '+impTxt(t.imp)+' (переносов: '+(t.mv||0)+')':'Звонок уже максимальной важности — больше не переносится. Он остаётся в списке на сегодня: позвоните или отметьте выполненным.';}
 function deferTask(t){
   if(isCallT(t)&&isOpen(t)&&!isHome(t)){const r=callBoost(t);if(r==='up')t.hold=nextWorkday(today());else delete t.hold;return;}
   t.hold=nextWorkday(today());t.mv=(t.mv||0)+1;t.mvd=today();}
 function callsToday(){const t0=today();return S.tasks.filter(t=>isOpen(t)&&isCallT(t)&&!isHome(t)&&t.status!=='wait'&&(!t.hold||t.hold<=t0)&&(!t.due||t.due<=t0)).sort((a,b)=>((+b.imp||2)-(+a.imp||2))||(String(a.due||'')<String(b.due||'')?-1:1));}
 function callCard(t){const imp=+t.imp||2,d=t.due?diff(t.due,today()):0,n=t.mv||0;
   return `<div class="cr" style="align-items:flex-start"><input type="checkbox" data-act="toggle" data-id="${t.id}" title="Позвонил — выполнено"><span class="grow" data-act="edit" data-id="${t.id}"><b>${esc(t.who||t.title)}</b>${t.topic?' — '+esc(t.topic):''}${t.phone?' · <a href="tel:'+esc(String(t.phone).replace(/[^\d+]/g,''))+'">'+esc(t.phone)+'</a>':''}
-    <div class="s"><span title="Важность">${'●'.repeat(imp)}${'○'.repeat(3-imp)}</span>${d<0?' · <span class="b red">'+(-d)+' дн. назад</span>':''}${n?' · переносов: '+n:''}${t.imp0&&imp>t.imp0?' · важность повышена с '+t.imp0+' до '+imp:''}${imp>=3&&n?' · <b>уже не откладывается</b>':''}</div></span>
+    <div class="s"><span title="Важность">${'●'.repeat(Math.min(3,Math.max(0,Math.round(imp))))}${'○'.repeat(3-Math.min(3,Math.max(0,Math.round(imp))))}${imp%1?' '+impTxt(imp):''}</span>${d<0?' · <span class="b red">'+(-d)+' дн. назад</span>':''}${n?' · переносов: '+n:''}${t.imp0&&imp>t.imp0?' · важность повышена с '+impTxt(t.imp0)+' до '+impTxt(imp):''}</div></span>
     <button data-act="tpost" data-id="${t.id}" title="Перенести на другой срок (важность вырастет)">↪ Перенести</button></div>`;}
 function callsView(){const L=callsToday();
   return `<div class="card" style="display:block"><div class="t">📞 Связаться сегодня${L.length?' ('+L.length+')':''}</div>${L.length?L.map(callCard).join(''):'<div class="s">На сегодня звонков нет.</div>'}<div class="bar"><button data-act="newcall">+ Звонок</button></div></div>`;}
 function callForm(t){
   const isNew=!t;t=t||{id:uid(),title:'',kind:'work',type:'Звонок',project:ui.fp||'',start:'',due:today(),imp:2,est:0.1,status:'todo',resp:'',note:'',repeat:''};
-  const imp0=+t.imp;
+  const imp0=+t.imp,impR=Math.min(3,Math.max(1,Math.round(imp0||2)));
   form(isNew?'Новый звонок':'Звонок',[
     {k:'who',label:'С кем связаться',val:t.who!=null?t.who:(isNew?'':t.title)},
     {k:'topic',label:'О чём (кратко)',val:t.topic||''},
     {k:'phone',label:'Телефон / контакт',val:t.phone||''},
-    {k:'imp',label:'Важность',type:'select',val:t.imp||2,opts:[[3,'3 — высокая'],[2,'2 — обычная'],[1,'1 — низкая']]},
+    {k:'imp',label:'Важность',type:'select',val:impR,opts:[[3,'3 — высокая'],[2,'2 — обычная'],[1,'1 — низкая']]},
     {k:'due',label:'Когда (только рабочие дни)',type:'date',val:t.due||today()},
     {k:'project',label:'Объект',type:'select',val:t.project,opts:[['','—']].concat(S.projects.map(p=>[p.id,p.name]))},
     {k:'note',label:'Заметка',type:'textarea',rows:2,val:t.note}
   ],v=>{
     if(!v.who.trim()){toast('Укажите, с кем связаться');return;}
     const nd=wdSnap(v.due||today());if(v.due&&nd!==v.due)toast('Выходной: звонок назначен на '+fmt(nd));
-    Object.assign(t,{who:v.who.trim(),topic:v.topic.trim(),phone:v.phone.trim(),imp:+v.imp,due:nd,project:v.project,note:v.note,type:'Звонок',est:t.est||0.1});
+    Object.assign(t,{who:v.who.trim(),topic:v.topic.trim(),phone:v.phone.trim(),imp:+v.imp,due:nd,project:v.project,note:v.note,type:'Звонок',est:t.est||0.1});if(+v.imp===impR)t.imp=imp0||impR;
     t.title='Позвонить: '+t.who+(t.topic?' — '+t.topic:'');
-    if(+v.imp!==imp0)delete t.imp0;delete t.hold;
+    if(+v.imp!==impR)delete t.imp0;delete t.hold;
     if(isNew){t.src='ввод вручную';S.tasks.push(t);}
     save();render();
   },isNew?'':`<button type="button" class="dng" data-act="deltask" data-id="${t.id}">Удалить</button>`);
@@ -995,9 +996,10 @@ async function syHash(t){const h=new Uint8Array(await crypto.subtle.digest('SHA-
 function syStable(v){if(Array.isArray(v))return '['+v.map(syStable).join(',')+']';if(v&&typeof v==='object')return '{'+Object.keys(v).sort().filter(k=>v[k]!==undefined).map(k=>JSON.stringify(k)+':'+syStable(v[k])).join(',')+'}';return JSON.stringify(v);}
 function syNorm(text){let d;try{d=JSON.parse(text);}catch(e){return String(text);}['tasks','projects','templates','graphs','shop'].forEach(c=>{if(Array.isArray(d[c]))d[c]=d[c].slice().sort((a,b)=>String(a.id)<String(b.id)?-1:1);});return syStable(d);}
 const syPayload=()=>JSON.stringify({tasks:S.tasks,projects:S.projects,templates:S.templates,graphs:S.graphs,shop:S.shop,del:S.del,learn:{samples:S.learn.samples,ev:S.learn.ev,iq:S.learn.iq||[]},kb:S.kb,settings:{lead:S.settings.lead,nextNo:S.settings.nextNo}});
-async function syGh(method,body,raw){
+function syTr(rx,tx){const m=new Date().toISOString().slice(0,7);if(!SY.tf||SY.tf.m!==m)SY.tf={m,rx:0,tx:0};SY.tf.rx+=rx||0;SY.tf.tx+=tx||0;}
+async function syGh(method,body,raw,et){
   const url='https://api.github.com/repos/'+SY.repo+'/contents/'+SYF+(method==='GET'&&SY.branch?'?ref='+encodeURIComponent(SY.branch):'');
-  let r;try{r=await fetch(url,{method,cache:'no-store',headers:{'Authorization':'Bearer '+SY.token,'Accept':raw?'application/vnd.github.raw+json':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},body:body?JSON.stringify(body):undefined});}
+  let r;try{r=await fetch(url,{method,cache:'no-store',headers:{'Authorization':'Bearer '+SY.token,'Accept':raw?'application/vnd.github.raw+json':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(et?{'If-None-Match':et}:{})},body:body?JSON.stringify(body):undefined});}
   catch(e){throw Object.assign(new Error('Нет связи с GitHub. Проверьте интернет.'),{net:1});}
   return r;}
 function syErr(r){const c=r.status;
@@ -1010,11 +1012,13 @@ async function syRun(manual,depth){
   if(!manual&&navigator.onLine===false)return null;
   SYB=true;let res={ok:false};const t00=Date.now();syStat('busy');
   try{
-    let r=await syGh('GET'),remote=null,sha=null;
+    const h0=await syHash(syPayload()),cond=!manual&&SY.et&&SY.hash&&h0===SY.hash;
+    let r=await syGh('GET',null,false,cond?SY.et:null),remote=null,sha=null;
+    if(r.status===304){syTr(700,0);SY.last=Date.now();SY.err='';sySave();res={ok:true,merged:null,uploaded:false};return res;}
     if(r.status===404){remote=null;}
-    else if(r.status===200){const j=await r.json();sha=j.sha;let txt;
+    else if(r.status===200){SY.et=r.headers.get('ETag')||null;const j=await r.json();sha=j.sha;syTr((j.content||'').length+600,0);let txt;
       if(j.content&&j.encoding==='base64')txt=new TextDecoder().decode(syUn(j.content.replace(/\s/g,'')));
-      else{const rr=await syGh('GET',null,true);if(!rr.ok)throw Object.assign(new Error(syErr(rr)),{});txt=await rr.text();}
+      else{const rr=await syGh('GET',null,true);if(!rr.ok)throw Object.assign(new Error(syErr(rr)),{});txt=await rr.text();syTr(txt.length,0);}
       remote=await syDec(txt,SY.pass);}
     else throw new Error(syErr(r));
     let merged=null;
@@ -1026,7 +1030,7 @@ async function syRun(manual,depth){
       const pr=await syGh('PUT',body);
       if(pr.status===409||pr.status===422){SYB=false;if((depth||0)<3)return await syRun(manual,(depth||0)+1);throw new Error('Не удалось записать: данные в облаке меняются одновременно. Повторите позже.');}
       if(!(pr.status===200||pr.status===201))throw new Error(syErr(pr));
-      const pj=await pr.json();SY.sha=pj.content&&pj.content.sha||null;SY.hash=h;}
+      syTr(1500,JSON.stringify(body).length);SY.et=null;const pj=await pr.json();SY.sha=pj.content&&pj.content.sha||null;SY.hash=h;}
     else{SY.sha=sha;SY.hash=h;}
     SY.last=Date.now();SY.base=t00;SY.err='';sySave();res={ok:true,merged,uploaded:need};
   }catch(e){SY.err=e.message||String(e);sySave();res={ok:false,err:SY.err};}
@@ -1044,7 +1048,7 @@ function syView(){
   const on=syCfg();
   let h='<h2>☁ Синхронизация между устройствами</h2>';
   if(on){
-    h+=`<div class="card" style="display:block"><div class="s">Репозиторий: <b>${esc(SY.repo)}</b> · последняя синхронизация: ${syAgo(SY.last)}</div>
+    h+=`<div class="card" style="display:block"><div class="s">Репозиторий: <b>${esc(SY.repo)}</b> · последняя синхронизация: ${syAgo(SY.last)}${SY.tf?` · трафик за месяц ≈ ${((SY.tf.rx+SY.tf.tx)/1048576).toFixed(1)} МБ`:''}</div>
     ${SY.err?`<div class="warn">${esc(SY.err)}</div>`:'<div class="s" style="color:var(--grn)">Данные в облаке зашифрованы на этом устройстве.</div>'}
     <label class="cr" style="border:0"><input type="checkbox" data-act="syauto" ${SY.auto?'checked':''}><span>Автоматически: сразу после каждого изменения (через 1–2 сек.), при запуске, при открытии приложения и раз в минуту</span></label>
     <div class="bar"><button class="pri" data-act="synow">Синхронизировать сейчас</button><button class="dng" data-act="sydis">Отключить на этом устройстве</button></div>
@@ -3059,7 +3063,7 @@ document.addEventListener('click',e=>{
   else if(a==='thot'||a==='tcold'){if(task){if(a==='thot')task.hot=1;else delete task.hot;dlg.close();save();render();}}
   else if(a==='tpost'){if(task){const t0=today(),late=task.due&&task.due<=t0,call=isCallT(task)&&!isHome(task);
     dlg.onchange=null;dlg.onclose=null;
-    dlg.innerHTML=`<form method="dialog"><h3>Отложить</h3><div class="s">${esc(task.title.slice(0,90))}</div>${late?`<div class="warn">Срок задачи ${task.due<t0?'уже прошёл':'сегодня'} (${fmt(task.due)}). Задача уйдёт из плана дня, из просроченных и критичных; вернётся в план в выбранный день (её можно вернуть раньше в разделе «Отложено»).</div>`:''}${call?(+task.imp>=3?'<div class="warn">Важность звонка уже максимальная, поэтому он больше не переносится: позвоните или отметьте выполненным. Если нужно изменить срок насовсем, откройте звонок и измените дату.</div>':'<div class="s">Звонок: можно перенести на любой рабочий день. При переносе важность вырастет на 1; на максимальной важности звонок больше не переносится.</div>'):''}
+    dlg.innerHTML=`<form method="dialog"><h3>Отложить</h3><div class="s">${esc(task.title.slice(0,90))}</div>${late?`<div class="warn">Срок задачи ${task.due<t0?'уже прошёл':'сегодня'} (${fmt(task.due)}). Задача уйдёт из плана дня, из просроченных и критичных; вернётся в план в выбранный день (её можно вернуть раньше в разделе «Отложено»).</div>`:''}${call?'<div class="s">Звонок: можно перенести на любой рабочий день. Количество переносов не ограничено: с каждым переносом важность растёт на 0,1 балла (сейчас '+impTxt(task.imp)+').</div>':''}
     <div class="bar" style="flex-direction:column;align-items:stretch"><button type="button" data-act="tpd" data-id="${task.id}" data-n="1">На следующий рабочий день (${fmt(addWd(t0,1))})</button><button type="button" data-act="tpd" data-id="${task.id}" data-n="2">Через 2 рабочих дня (${fmt(addWd(t0,2))})</button><button type="button" data-act="tpd" data-id="${task.id}" data-n="5">Через неделю (${fmt(addWd(t0,5))})</button>
     <div class="g2"><input type="date" id="tpdate" min="${addDays(t0,1)}"><button type="button" data-act="tpd" data-id="${task.id}" data-n="d">На выбранную дату</button></div></div><div class="row"><button value="cancel">Отмена</button></div></form>`;dlg.showModal();}}
   else if(a==='tpd'){if(task){const t0=today();let d=b.dataset.n==='d'?($('#tpdate').value||''):addWd(t0,+b.dataset.n);if(!d||d<=t0){toast('Выберите дату позже сегодняшней');return;}d=wdSnap(d);
